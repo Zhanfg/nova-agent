@@ -2,6 +2,7 @@ package fuck.andes.agent.workspace
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class AgentWorkspaceRegistryPersistenceTest {
@@ -30,13 +31,48 @@ class AgentWorkspaceRegistryPersistenceTest {
         assertEquals(2, persistence.saveCount)
     }
 
+    @Test
+    fun failedRegisterPersistenceRollsBackInMemoryMutation() {
+        val persistence = FakePersistence()
+        val registry = AgentWorkspaceRegistry(persistence)
+        registry.register(workspace("existing"))
+        persistence.failNextSave = true
+
+        assertThrows(IllegalStateException::class.java) {
+            registry.register(workspace("new"))
+        }
+
+        assertEquals("existing", registry.get("existing")?.workspaceId)
+        assertNull(registry.get("new"))
+    }
+
+    @Test
+    fun failedRemovePersistenceRestoresWorkspaceInMemory() {
+        val persistence = FakePersistence()
+        val registry = AgentWorkspaceRegistry(persistence)
+        val workspace = workspace("existing")
+        registry.register(workspace)
+        persistence.failNextSave = true
+
+        assertThrows(IllegalStateException::class.java) {
+            registry.remove("existing")
+        }
+
+        assertEquals(workspace, registry.get("existing"))
+    }
+
     private class FakePersistence : AgentWorkspaceRegistry.Persistence {
         var stored: List<AgentWorkspace> = emptyList()
         var saveCount: Int = 0
+        var failNextSave: Boolean = false
 
         override fun load(): List<AgentWorkspace> = stored
 
         override fun save(workspaces: List<AgentWorkspace>) {
+            if (failNextSave) {
+                failNextSave = false
+                throw IllegalStateException("disk unavailable")
+            }
             stored = workspaces.toList()
             saveCount += 1
         }
