@@ -4,6 +4,22 @@
 >
 > 本文是功能验收合同。任何标为 **Required** 的桌面 Codex 能力，在 Nova 宣称达到 Mobile Codex 目标前都必须具备可运行实现、自动化测试和至少一轮真机验证。
 
+## 0. 对齐基线
+
+- 基线日期：**2026-08-07**。
+- 对齐对象：OpenAI 当前公开的 Codex 桌面/远程产品能力，而不是早期仅 CLI 的能力集合。
+- 当前公开能力基线包括：多 Agent 并行、隔离 worktree、Skills、Automations、长任务/后台任务、Goal mode、浏览器与精确 annotations、diff review/comment、远程继续/手机 Remote、Voice 协调以及可扩展 Plugins/Apps。
+- 每次准备发布 Nova 的大版本前必须重新核对 Codex 官方能力；若桌面 Codex 新增工程能力，本表新增 Required 项，不能以“本文旧版本没写”为理由跳过。
+
+参考基线：
+
+- OpenAI — Introducing the Codex app
+- OpenAI — Codex product page
+- OpenAI Help — ChatGPT release notes / Codex updates
+- OpenAI — Work with Codex from anywhere
+- OpenAI Help — ChatGPT Work and Codex
+- OpenAI Help — Plugins in Codex
+
 ## 1. 核心原则
 
 1. **功能等价优先于 UI 仿制**：界面可以按 Android/M3DE 重新组织，但用户能完成的工程任务不能缩水。
