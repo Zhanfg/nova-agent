@@ -9,9 +9,14 @@ internal fun interface AgentGitExecutor {
         val stdout: String,
         val stderr: String,
         val timedOut: Boolean = false,
+        val stdoutTruncated: Boolean = false,
+        val stderrTruncated: Boolean = false,
     ) {
         val ok: Boolean
             get() = exitCode == 0 && !timedOut
+
+        val complete: Boolean
+            get() = !stdoutTruncated && !stderrTruncated
     }
 }
 
