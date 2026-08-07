@@ -15,8 +15,15 @@ internal class AgentGoalSession(
         data class Fail(val message: String) : CompletionDecision
     }
 
+    private data class ExecutedToolEvidence(
+        val toolCallId: String,
+        val toolName: String,
+        val ok: Boolean,
+    )
+
     private var tracker: AgentGoalTracker? = null
     private var goalRoundCount: Int = 0
+    private val executedTools = linkedMapOf<String, ExecutedToolEvidence>()
 
     fun execute(toolCall: AgentModelClient.ToolCall): AgentModelClient.ToolResult? {
         val args = runCatching { JSONObject(toolCall.argumentsJson.ifBlank { "{}" }) }
@@ -31,6 +38,29 @@ internal class AgentGoalSession(
             else -> return null
         }
         return AgentModelClient.ToolResult(payload)
+    }
+
+    /**
+     * Records provenance only for normal tools executed after Goal activation. A result is eligible
+     * as verification evidence only when it exposes an explicit structured `ok` boolean. This
+     * prevents the model from satisfying a criterion by inventing a `passed` status with no tool
+     * execution behind it.
+     */
+    fun recordToolExecution(
+        toolCall: AgentModelClient.ToolCall,
+        result: AgentModelClient.ToolResult,
+    ) {
+        if (tracker == null || toolCall.id.isBlank()) return
+        val ok = structuredOk(result.content) ?: return
+        while (executedTools.size >= MAX_TOOL_EVIDENCE_RECORDS) {
+            val oldest = executedTools.keys.firstOrNull() ?: break
+            executedTools.remove(oldest)
+        }
+        executedTools[toolCall.id] = ExecutedToolEvidence(
+            toolCallId = toolCall.id,
+            toolName = toolCall.name,
+            ok = ok,
+        )
     }
 
     fun onRound(): CompletionDecision {
@@ -98,6 +128,7 @@ internal class AgentGoalSession(
             return error("INVALID_ARGUMENT", failure.message ?: "Goal 定义无效")
         }
         goalRoundCount = 0
+        executedTools.clear()
         tracker = AgentGoalTracker(goal = goal, startedAtMillis = clock())
         return status()
     }
@@ -106,19 +137,27 @@ internal class AgentGoalSession(
         val active = tracker ?: return error("GOAL_NOT_ACTIVE", "请先调用 goal_begin")
         val criterionId = args.optString("criterion_id").trim()
         val summary = args.optString("summary").trim()
-        val source = args.optString("source").trim()
-        val status = when (args.optString("status").lowercase()) {
-            "passed" -> AgentGoalTracker.CriterionStatus.PASSED
-            "failed" -> AgentGoalTracker.CriterionStatus.FAILED
-            else -> return error("INVALID_ARGUMENT", "status 仅支持 passed/failed")
+        val toolCallId = args.optString("tool_call_id").trim()
+        if (criterionId.isBlank() || summary.isBlank() || toolCallId.isBlank()) {
+            return error("INVALID_ARGUMENT", "criterion_id、tool_call_id、summary 不能为空")
+        }
+        val executed = executedTools[toolCallId]
+            ?: return error(
+                "GOAL_EVIDENCE_NOT_EXECUTED",
+                "tool_call_id=$toolCallId 没有可验证的本轮工具执行结果；不能凭空记录 evidence",
+            )
+        val derivedStatus = if (executed.ok) {
+            AgentGoalTracker.CriterionStatus.PASSED
+        } else {
+            AgentGoalTracker.CriterionStatus.FAILED
         }
         val failure = runCatching {
             active.recordEvidence(
                 AgentGoalTracker.Evidence(
                     criterionId = criterionId,
-                    status = status,
+                    status = derivedStatus,
                     summary = summary,
-                    source = source,
+                    source = "${executed.toolName}:${executed.toolCallId}",
                     capturedAtMillis = clock(),
                 )
             )
@@ -184,13 +223,15 @@ internal class AgentGoalSession(
                         }
                         append('\n')
                     }
-                    append("请继续执行修复/验证，并使用 goal_report_evidence 记录可核验结果。")
+                    append(
+                        "请继续执行修复/验证；goal_report_evidence 必须引用一个已经真实执行且返回结构化 ok 的 tool_call_id。"
+                    )
                 }
             )
         }
         is AgentGoalTracker.State.VerificationFailed -> CompletionDecision.Continue(
             "Goal verification 仍有失败项：${state.failedCriteria.joinToString()}。" +
-                "请修复后重新验证并调用 goal_report_evidence，不能直接结束。"
+                "请修复后重新执行验证工具，并用新的 tool_call_id 调用 goal_report_evidence，不能直接结束。"
         )
         is AgentGoalTracker.State.Succeeded -> CompletionDecision.Allow
         is AgentGoalTracker.State.BudgetExceeded -> CompletionDecision.Fail(
@@ -208,6 +249,11 @@ internal class AgentGoalSession(
         is AgentGoalTracker.State.BudgetExceeded -> "budget_exceeded"
         is AgentGoalTracker.State.Blocked -> "blocked"
     }
+
+    private fun structuredOk(content: String): Boolean? = runCatching {
+        val json = JSONObject(content)
+        if (!json.has("ok") || json.isNull("ok")) null else json.getBoolean("ok")
+    }.getOrNull()
 
     private fun JSONArray?.toStringList(): List<String> = buildList {
         val array = this@toStringList ?: return@buildList
@@ -227,14 +273,19 @@ internal class AgentGoalSession(
         const val TOOL_EVIDENCE = "goal_report_evidence"
         const val TOOL_STATUS = "goal_status"
         const val TOOL_BLOCK = "goal_block"
+        private const val MAX_TOOL_EVIDENCE_RECORDS = 256
     }
 }
 
-/** Delegates normal tools unchanged and intercepts only Goal mode control/evidence tools. */
+/** Delegates normal tools unchanged, records their verification provenance, and intercepts Goal tools. */
 internal class AgentGoalToolExecutor(
     private val goalSession: AgentGoalSession,
     private val delegate: AgentModelClient.ToolExecutor,
 ) : AgentModelClient.ToolExecutor {
-    override fun execute(toolCall: AgentModelClient.ToolCall): AgentModelClient.ToolResult =
-        goalSession.execute(toolCall) ?: delegate.execute(toolCall)
+    override fun execute(toolCall: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
+        goalSession.execute(toolCall)?.let { return it }
+        val result = delegate.execute(toolCall)
+        goalSession.recordToolExecution(toolCall, result)
+        return result
+    }
 }
