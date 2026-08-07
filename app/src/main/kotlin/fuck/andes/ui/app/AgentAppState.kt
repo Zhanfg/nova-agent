@@ -79,6 +79,7 @@ internal class AgentAppState(
     skillZipImportGateway: SkillZipImportGateway? = null,
     startBackgroundWork: Boolean = true,
     initialConversationSnapshot: AgentConversationStore.Snapshot? = null,
+    probePlatformState: Boolean = startBackgroundWork,
 ) {
     private val appContext = context.applicationContext
     private val skillZipImportGateway = skillZipImportGateway ?: CoreSkillZipImportGateway(appContext)
@@ -124,10 +125,14 @@ internal class AgentAppState(
     var skillsState by mutableStateOf(AgentSkillsUiState(isLoading = true))
         private set
 
-    var permissionHealthState by mutableStateOf(buildPermissionHealthState(appContext))
+    var permissionHealthState by mutableStateOf(
+        if (probePlatformState) buildPermissionHealthState(appContext) else PermissionHealthUiState(emptyList())
+    )
         private set
 
-    var systemEnhanceState by mutableStateOf(buildSystemEnhanceState())
+    var systemEnhanceState by mutableStateOf(
+        if (probePlatformState) buildSystemEnhanceState() else AgentSystemEnhanceUiState(emptyList())
+    )
         private set
 
     var memoryState by mutableStateOf(AgentMemoryUiState())
