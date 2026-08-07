@@ -40,6 +40,42 @@ class AgentRunQueuePolicyTest {
     }
 
     @Test
+    fun duplicateRunIdIsDetectedAcrossEveryInFlightStage() {
+        assertTrue(
+            AgentRunQueuePolicy.isDuplicateRunId(
+                runId = "same",
+                activeRunId = "same",
+                ingestContainsRunId = false,
+                queuedContainsRunId = false,
+            )
+        )
+        assertTrue(
+            AgentRunQueuePolicy.isDuplicateRunId(
+                runId = "same",
+                activeRunId = "other",
+                ingestContainsRunId = true,
+                queuedContainsRunId = false,
+            )
+        )
+        assertTrue(
+            AgentRunQueuePolicy.isDuplicateRunId(
+                runId = "same",
+                activeRunId = null,
+                ingestContainsRunId = false,
+                queuedContainsRunId = true,
+            )
+        )
+        assertFalse(
+            AgentRunQueuePolicy.isDuplicateRunId(
+                runId = "same",
+                activeRunId = "other",
+                ingestContainsRunId = false,
+                queuedContainsRunId = false,
+            )
+        )
+    }
+
+    @Test
     fun cancellingQueuedRunRemovesOnlyMatchingItemAndKeepsOrder() {
         val queue = ArrayDeque(
             listOf(
