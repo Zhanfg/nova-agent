@@ -16,6 +16,7 @@ internal class AgentGoalSession(
     }
 
     private var tracker: AgentGoalTracker? = null
+    private var goalRoundCount: Int = 0
 
     fun execute(toolCall: AgentModelClient.ToolCall): AgentModelClient.ToolResult? {
         val args = runCatching { JSONObject(toolCall.argumentsJson.ifBlank { "{}" }) }
@@ -32,11 +33,12 @@ internal class AgentGoalSession(
         return AgentModelClient.ToolResult(payload)
     }
 
-    fun onRound(round: Int): CompletionDecision {
+    fun onRound(): CompletionDecision {
         val active = tracker ?: return CompletionDecision.Allow
+        goalRoundCount += 1
         val previous = active.usage()
         active.updateUsage(
-            steps = maxOf(previous.steps, round),
+            steps = maxOf(previous.steps, goalRoundCount),
             tokens = previous.tokens,
             costMicros = previous.costMicros,
         )
@@ -95,6 +97,7 @@ internal class AgentGoalSession(
         }.getOrElse { failure ->
             return error("INVALID_ARGUMENT", failure.message ?: "Goal 定义无效")
         }
+        goalRoundCount = 0
         tracker = AgentGoalTracker(goal = goal, startedAtMillis = clock())
         return status()
     }
