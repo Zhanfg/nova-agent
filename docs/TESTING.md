@@ -12,6 +12,18 @@ Nova 的单元测试必须验证目标逻辑，而不是意外启动与测试无
 
 如果测试显式创建 `CoroutineScope`，应先断言纯状态路径没有遗留 child job，再取消测试拥有的 root Job。不要用与目标逻辑无关的无限等待掩盖生命周期问题。Room 测试同时调用 `FuckAndesDatabase.closeForTests()` 并清理测试数据库。
 
+## Runtime 队列不变量
+
+当前单 active-session Runtime 虽然只是未来多 Agent 调度器的兼容层，但必须保持以下运输层不变量：
+
+- 图片/附件 ingest 的 active + waiting 请求严格 FIFO，取消只移除对应 `runId`。
+- 同一个 `runId` 在 ingest、active session 和 materialized run queue 中最多只能存在一次；重复请求必须在入口失败，避免取消、结果投递与持久化产生歧义。
+- Service shutdown 必须对 ingest waiting、materialized run queue 与 active session 全部给出终止语义；不得让 queued 客户端只能依赖 30 分钟 transport timeout 才返回。
+- stale ingest worker 不能推进已被取消后提升的新请求。
+- 已有 waiter 时新请求不能插队，即使当前 active session 已进入 terminal 状态。
+
+这些规则分别由 `AgentSerialIngestQueueTest`、`AgentRunQueuePolicyTest` 与 Runtime 测试域保护。未来迁移到 `AgentTaskScheduler` 多 session 架构时，不能以并行为理由破坏同资源 FIFO 和唯一 run identity。
+
 ## CI 分片
 
 `Nova Verification` 将模型、Runtime、数据/Skills、平台、浏览器、图片、UI Room 持久化、UI 状态、UI 策略、终端与 Lint 分开执行。分片的目的不是规避失败，而是让资源泄漏、超时和测试失败能够定位到具体能力域。
