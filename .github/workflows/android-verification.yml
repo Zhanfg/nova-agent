@@ -18,9 +18,38 @@ concurrency:
 
 jobs:
   unit-tests:
-    name: 常规单元测试
+    name: 单元测试 · ${{ matrix.label }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: runtime-ui
+            label: 模型、运行时与界面
+            patterns: |
+              fuck.andes.agent.browser.*
+              fuck.andes.agent.media.*
+              fuck.andes.agent.memory.*
+              fuck.andes.agent.model.*
+              fuck.andes.agent.overlay.*
+              fuck.andes.agent.runtime.*
+              fuck.andes.ui.*
+          - id: data-skills
+            label: 数据、Skills 与工具
+            patterns: |
+              fuck.andes.agent.skill.*
+              fuck.andes.agent.tool.*
+              fuck.andes.config.*
+              fuck.andes.core.*
+              fuck.andes.data.*
+          - id: platform
+            label: Android 平台集成
+            patterns: |
+              fuck.andes.agent.accessibility.*
+              fuck.andes.agent.device.*
+              fuck.andes.hook.*
+              fuck.andes.systemizer.*
 
     steps:
       - name: 检出代码
@@ -43,33 +72,23 @@ jobs:
       - name: 安装 Android SDK 37
         run: sdkmanager --channel=3 "platforms;android-37.0"
 
-      - name: 执行常规单元测试
-        timeout-minutes: 30
+      - name: 执行测试分片
+        timeout-minutes: 20
+        env:
+          TEST_PATTERNS: ${{ matrix.patterns }}
         run: |
+          args=()
+          while IFS= read -r pattern; do
+            [[ -z "$pattern" ]] || args+=(--tests "$pattern")
+          done <<< "$TEST_PATTERNS"
           ./gradlew --no-daemon --stacktrace --no-configuration-cache \
-            :app:testDebugUnitTest \
-            --tests 'fuck.andes.agent.accessibility.*' \
-            --tests 'fuck.andes.agent.browser.*' \
-            --tests 'fuck.andes.agent.device.*' \
-            --tests 'fuck.andes.agent.media.*' \
-            --tests 'fuck.andes.agent.memory.*' \
-            --tests 'fuck.andes.agent.model.*' \
-            --tests 'fuck.andes.agent.overlay.*' \
-            --tests 'fuck.andes.agent.runtime.*' \
-            --tests 'fuck.andes.agent.skill.*' \
-            --tests 'fuck.andes.agent.tool.*' \
-            --tests 'fuck.andes.config.*' \
-            --tests 'fuck.andes.core.*' \
-            --tests 'fuck.andes.data.*' \
-            --tests 'fuck.andes.hook.*' \
-            --tests 'fuck.andes.systemizer.*' \
-            --tests 'fuck.andes.ui.*'
+            :app:testDebugUnitTest "${args[@]}"
 
-      - name: 上传常规测试报告
+      - name: 上传测试报告
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: nova-unit-tests-${{ github.sha }}
+          name: nova-unit-${{ matrix.id }}-${{ github.sha }}
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
           retention-days: 14
