@@ -1,5 +1,6 @@
 package fuck.andes.agent.model
 
+import fuck.andes.agent.goal.AgentGoalSession
 import fuck.andes.agent.runtime.AgentEvent
 import fuck.andes.agent.runtime.AgentRunController
 import org.json.JSONArray
@@ -22,6 +23,7 @@ internal class AgentLoop(
     private val onEvent: (AgentEvent) -> Unit,
     private val modelSupportsVision: Boolean = false,
     private val visionRouter: VisionRouter? = null,
+    private val goalSession: AgentGoalSession? = null,
     private val limits: Limits = Limits(),
 ) {
     data class Limits(
@@ -61,6 +63,10 @@ internal class AgentLoop(
         while (true) {
             checkRoundLimit(round)
             runController.throwIfCancelled()
+            when (val goalDecision = goalSession?.onRound()) {
+                is AgentGoalSession.CompletionDecision.Fail -> error(goalDecision.message)
+                else -> Unit
+            }
             appendPendingSteeringMessage()
             onEvent(AgentEvent.RoundStarted(round = round, messageCount = messages.length()))
 
@@ -181,6 +187,16 @@ internal class AgentLoop(
             if (content.isBlank() || content == "null") {
                 val finishReason = assistantMessage.optString("finish_reason")
                 error("模型接口第 $round 轮返回为空${finishReason.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}")
+            }
+
+            when (val goalDecision = goalSession?.completionDecision()) {
+                null, AgentGoalSession.CompletionDecision.Allow -> Unit
+                is AgentGoalSession.CompletionDecision.Continue -> {
+                    messages.put(AgentConversationCodec.userTextMessage(goalDecision.feedback))
+                    round += 1
+                    continue
+                }
+                is AgentGoalSession.CompletionDecision.Fail -> error(goalDecision.message)
             }
 
             onEvent(AgentEvent.RunFinished(round = round, contentChars = content.length))

@@ -15,6 +15,7 @@ import fuck.andes.agent.skill.PublicGitHubSkillSource
 import fuck.andes.agent.tool.AgentLocalTools
 import fuck.andes.agent.tool.PendingSkillConflictCapabilityParser
 import fuck.andes.agent.tool.ToolExecutionDecision
+import fuck.andes.agent.workspace.AgentWorkspaceContextBuilder
 import fuck.andes.core.AndroidAgentLogger
 import fuck.andes.core.safeLogType
 import fuck.andes.data.repository.AgentMemoryRepository
@@ -62,6 +63,11 @@ internal class AgentRuntimeRunExecutor(
 
         val result = try {
             entrySurfaceGuard = EntrySurfaceGuard.from(request.handoff, AndroidAgentLogger)
+            val runConfig = AgentWorkspaceContextBuilder.augment(
+                context = appContext,
+                workspaceId = request.workspaceId,
+                config = request.config,
+            )
             val skillIndexService = SkillRuntime.createIndexService(appContext)
             val skillLoader = SkillRuntime.createLoader(appContext)
             val skillResourceReader = SkillRuntime.createResourceReader(appContext)
@@ -79,13 +85,13 @@ internal class AgentRuntimeRunExecutor(
                 runCatching {
                     AgentMemoryContextBuilder.build(
                         snapshot = AgentMemoryRepository.snapshot(),
-                        contextWindow = request.config.contextWindow,
+                        contextWindow = runConfig.contextWindow,
                     )
                 }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_context_failed") {
                         "Agent memory context unavailable: type=${throwable.safeLogType()}"
                     }
-                    AgentMemoryContextBuilder.empty(request.config.contextWindow)
+                    AgentMemoryContextBuilder.empty(runConfig.contextWindow)
                 }
             } else {
                 AgentMemoryContext.DISABLED
@@ -159,7 +165,7 @@ internal class AgentRuntimeRunExecutor(
             toolsBinding = runController.register(executor::close)
             timing.preparationFinished(skillContext.installedSkills.size)
             val completedResponse = AgentModelClient.complete(
-                config = request.config,
+                config = runConfig,
                 prompt = request.prompt,
                 toolExecutor = executor,
                 images = request.images,

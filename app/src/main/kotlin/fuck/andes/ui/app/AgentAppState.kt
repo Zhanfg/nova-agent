@@ -534,6 +534,17 @@ internal class AgentAppState(
         persistConversations()
     }
 
+    fun bindCurrentWorkspace(workspaceId: String?) {
+        val normalized = workspaceId?.trim()?.takeIf(String::isNotBlank)
+        if (homeState.workspaceId == normalized) return
+        updateCurrentConversation(homeState.copy(workspaceId = normalized))
+        selectedConversationId?.let {
+            conversationUpdatedAt = conversationUpdatedAt + (it to System.currentTimeMillis())
+            refreshConversationSummaries()
+            persistConversations()
+        }
+    }
+
     fun sendCurrentMessage() {
         val prompt = homeState.input.trim()
         val pendingImages = homeState.pendingImages
@@ -547,6 +558,7 @@ internal class AgentAppState(
             selectedConversationId = it
         }
         val history = homeState.history
+        val workspaceId = homeState.workspaceId
         val reasoningEffort = homeState.reasoningEffort
         val runId = "run-${UUID.randomUUID()}"
         val imageDataUrls = pendingImages.map { it.dataUrl }
@@ -634,6 +646,7 @@ internal class AgentAppState(
                     visionConfig = AgentModelClient.loadVisionConfig(),
                     images = modelImages,
                     history = history,
+                    workspaceId = workspaceId,
                     handoff = AgentRuntimeWire.EntryHandoff(
                         id = runId,
                         source = HANDOFF_SOURCE,
@@ -1393,6 +1406,7 @@ internal class AgentAppState(
             reasoningEffort = draft.reasoningEffort,
             availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
             pendingImages = draft.pendingImages,
+            workspaceId = draft.workspaceId,
         )
         conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
     }

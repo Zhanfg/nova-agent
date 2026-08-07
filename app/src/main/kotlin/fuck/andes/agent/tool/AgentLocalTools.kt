@@ -93,6 +93,7 @@ internal class AgentLocalTools(
         logger = logger,
         linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
     )
+    private val workspaceTools = AgentWorkspaceTools(context, terminalController)
     private val publishedObservation = AtomicReference(PublishedObservation())
     private val clockMutationFingerprints = ConcurrentHashMap.newKeySet<String>()
     private val runAvailableSkillIds = runAvailableSkillIds
@@ -126,6 +127,9 @@ internal class AgentLocalTools(
             }
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
             memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
+            workspaceTools.execute(toolCall.name, args)?.let { workspaceResult ->
+                return@runCatching textResult(workspaceResult)
+            }
             if (
                 toolCall.name in CLOCK_MUTATION_TOOLS &&
                 !clockMutationFingerprints.add("${toolCall.name}:${args}")

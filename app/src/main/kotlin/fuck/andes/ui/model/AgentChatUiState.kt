@@ -8,6 +8,7 @@ import fuck.andes.data.model.ReasoningEffort
 internal data class AgentChatUiState(
     val messages: List<AgentChatMessageUi>,
     val history: List<AgentModelClient.ConversationMessage> = emptyList(),
+    val workspaceId: String? = null,
     val input: String,
     val isStreaming: Boolean,
     val thinkingEnabled: Boolean,

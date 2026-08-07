@@ -65,6 +65,7 @@ internal object AgentRuntimeWire {
 
     private const val KEY_TYPE = "type"
     private const val KEY_RUN_ID = "run_id"
+    private const val KEY_WORKSPACE_ID = "workspace_id"
     private const val KEY_SUPPLEMENT_TEXT = "supplement_text"
     private const val KEY_VISION_CONFIG_JSON = "vision_config_json"
     private const val KEY_PROMPT = "prompt"
@@ -135,7 +136,8 @@ internal object AgentRuntimeWire {
         val visionConfig: AgentModelClient.ModelConfig? = null,
         val images: List<AgentModelClient.ModelImage>,
         val history: List<AgentModelClient.ConversationMessage> = emptyList(),
-        val handoff: EntryHandoff? = null
+        val handoff: EntryHandoff? = null,
+        val workspaceId: String? = null,
     )
 
     /**
@@ -230,6 +232,7 @@ internal object AgentRuntimeWire {
 
     private fun requestBundle(request: RunRequest, imageBundles: List<Bundle>): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, request.runId)
+        request.workspaceId?.takeIf(String::isNotBlank)?.let { putString(KEY_WORKSPACE_ID, it) }
         putString(KEY_PROMPT, request.prompt)
         putString(KEY_PROVIDER_ID, request.config.providerId)
         putString(KEY_PROVIDER_NAME, request.config.providerName)
@@ -401,7 +404,8 @@ internal object AgentRuntimeWire {
             visionConfig = bundle.getString(KEY_VISION_CONFIG_JSON)
                 ?.let { raw -> runCatching { json.decodeFromString<AgentModelClient.ModelConfig>(raw) }.getOrNull() },
             images = images,
-            handoff = bundle.getBundle(KEY_HANDOFF)?.let(::entryHandoffFromBundle)
+            handoff = bundle.getBundle(KEY_HANDOFF)?.let(::entryHandoffFromBundle),
+            workspaceId = bundle.getString(KEY_WORKSPACE_ID)?.trim()?.takeIf(String::isNotBlank),
         )
 
     fun toBundle(handoff: EntryHandoff): Bundle = Bundle().apply {
