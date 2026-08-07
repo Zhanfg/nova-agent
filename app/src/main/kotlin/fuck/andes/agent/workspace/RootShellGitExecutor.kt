@@ -29,6 +29,8 @@ internal class RootShellGitExecutor(
                     json.optString("message")
                 },
                 timedOut = json.optBoolean("timed_out", false),
+                stdoutTruncated = json.optBoolean("stdout_truncated", false),
+                stderrTruncated = json.optBoolean("stderr_truncated", false),
             )
         }.getOrElse { failure ->
             AgentGitExecutor.Result(
