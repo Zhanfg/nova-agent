@@ -366,10 +366,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    private fun shouldQueueNewRun(): Boolean {
-        val current = activeSession
-        return (current != null && !current.isTerminal) || runQueue.isNotEmpty()
-    }
+    private fun shouldQueueNewRun(): Boolean =
+        AgentRunQueuePolicy.shouldQueue(
+            hasActiveNonTerminalSession = activeSession?.isTerminal == false,
+            queuedCount = runQueue.size,
+        )
 
     private fun enqueueOrReject(
         request: AgentRuntimeWire.RunRequest,
@@ -644,9 +645,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
             return
         }
-        val queued = runQueue.firstOrNull { it.request.runId == runId }
+        val queued = AgentRunQueuePolicy.removeQueuedByRunId(
+            queue = runQueue,
+            runId = runId,
+            runIdOf = { it.request.runId },
+        )
         if (queued != null) {
-            runQueue.remove(queued)
             sendResultTo(
                 queued.replyTo,
                 AgentRuntimeWire.RunResult(
