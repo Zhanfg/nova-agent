@@ -251,6 +251,32 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         incoming: AgentRuntimeWire.IncomingRunRequest,
         replyTo: Messenger?,
     ) {
+        val runId = incoming.request.runId
+        if (
+            AgentRunQueuePolicy.isDuplicateRunId(
+                runId = runId,
+                activeRunId = activeSession?.runId,
+                ingestContainsRunId = pendingStartRequests.any {
+                    it.incoming.request.runId == runId
+                },
+                queuedContainsRunId = runQueue.any { it.request.runId == runId },
+            )
+        ) {
+            incoming.close()
+            sendRequestIngestedTo(replyTo, runId)
+            sendResultTo(
+                replyTo,
+                AgentRuntimeWire.RunResult(
+                    runId = runId,
+                    ok = false,
+                    content = "",
+                    error = "Agent Runtime 拒绝重复 runId",
+                ),
+            )
+            AndroidAgentLogger.warn("Agent runtime rejected duplicate runId=$runId")
+            return
+        }
+
         val pending = PendingStartRequest(
             generation = startRequestGeneration,
             incoming = incoming,
