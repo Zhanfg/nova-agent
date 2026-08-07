@@ -1,0 +1,88 @@
+name: One-shot AgentAppState snapshot injection
+
+on:
+  push:
+    branches:
+      - fix/ci-baseline-and-nova-branding
+    paths:
+      - .github/workflows/one-shot-appstate-snapshot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/ci-baseline-and-nova-branding
+          fetch-depth: 0
+      - name: Patch snapshot injection
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          state_path = Path('app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt')
+          state = state_path.read_text()
+          old_ctor = '''internal class AgentAppState(
+              context: Context,
+              private val scope: CoroutineScope,
+              skillZipImportGateway: SkillZipImportGateway? = null,
+              startBackgroundWork: Boolean = true,
+          ) {'''
+          new_ctor = '''internal class AgentAppState(
+              context: Context,
+              private val scope: CoroutineScope,
+              skillZipImportGateway: SkillZipImportGateway? = null,
+              startBackgroundWork: Boolean = true,
+              initialConversationSnapshot: AgentConversationStore.Snapshot? = null,
+          ) {'''
+          if old_ctor not in state:
+              raise SystemExit('constructor anchor not found')
+          state = state.replace(old_ctor, new_ctor, 1)
+          old_initial = '    private val initialConversations = AgentConversationStore.load(appContext)\n'
+          new_initial = '''    private val initialConversations = initialConversationSnapshot
+              ?: AgentConversationStore.load(appContext)
+'''
+          if old_initial not in state:
+              raise SystemExit('initial snapshot anchor not found')
+          state = state.replace(old_initial, new_initial, 1)
+          state_path.write_text(state)
+
+          test_path = Path('app/src/test/java/fuck/andes/ui/app/AgentConversationStoreTest.kt')
+          test = test_path.read_text()
+          old_state = '''            val state = AgentAppState(
+                  context = context,
+                  scope = scope,
+                  startBackgroundWork = false,
+              )
+'''
+          new_state = '''            val state = AgentAppState(
+                  context = context,
+                  scope = scope,
+                  startBackgroundWork = false,
+                  initialConversationSnapshot = AgentConversationStore.Snapshot(
+                      selectedConversationId = null,
+                      conversationsById = emptyMap(),
+                      titles = emptyMap(),
+                      updatedAt = emptyMap(),
+                  ),
+              )
+'''
+          if old_state not in test:
+              raise SystemExit('test state anchor not found')
+          test_path.write_text(test.replace(old_state, new_state, 1))
+          PY
+          git diff --check
+      - name: Commit and remove helper
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-appstate-snapshot.yml
+          git add app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt app/src/test/java/fuck/andes/ui/app/AgentConversationStoreTest.kt
+          git commit -m 'test: inject AgentAppState snapshot for state-only coverage'
+          git push origin HEAD:fix/ci-baseline-and-nova-branding
