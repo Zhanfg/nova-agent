@@ -9,20 +9,20 @@ import org.junit.Test
 
 class AgentWorkspaceContextBuilderTest {
     @Test
-    fun augmentsOnlyThisRunWithWorkspaceMetadataAndLayeredAgents() {
-        val root = Files.createTempDirectory("nova-workspace-context").toFile()
+    fun isolatedWorktreeLoadsAgentsFromWorktreeRatherThanSourceCheckout() {
+        val sourceRoot = Files.createTempDirectory("nova-source-repo").toFile()
+        val worktreeRoot = Files.createTempDirectory("nova-worktree").toFile()
         try {
-            File(root, "AGENTS.md").writeText("root instruction")
-            val child = File(root, "app").apply { mkdirs() }
-            File(child, "AGENTS.md").writeText("child instruction")
+            File(sourceRoot, "AGENTS.md").writeText("source checkout instruction should not leak")
+            File(worktreeRoot, "AGENTS.md").writeText("worktree root instruction")
             val workspace = AgentWorkspace(
                 workspaceId = "ws-1",
-                rootPath = root.absolutePath,
-                repositoryRoot = root.absolutePath,
+                rootPath = sourceRoot.absolutePath,
+                repositoryRoot = sourceRoot.absolutePath,
                 baseRef = "main",
                 baseSha = "abc123",
                 branch = "feat/mobile",
-                worktreePath = child.absolutePath,
+                worktreePath = worktreeRoot.absolutePath,
                 sharedOriginalWorkspace = false,
                 dirtyBaseline = AgentWorkspace.DirtyBaseline(" M app/Main.kt", 1L),
             )
@@ -39,15 +39,17 @@ class AgentWorkspaceContextBuilderTest {
             assertTrue(augmented.systemPrompt.contains("base system prompt"))
             assertTrue(augmented.systemPrompt.contains("<nova_workspace_context>"))
             assertTrue(augmented.systemPrompt.contains("workspace_id: ws-1"))
-            assertTrue(augmented.systemPrompt.contains("working_directory: ${child.absolutePath}"))
+            assertTrue(augmented.systemPrompt.contains("working_directory: ${worktreeRoot.absolutePath}"))
+            assertTrue(augmented.systemPrompt.contains("repository_root: ${sourceRoot.absolutePath}"))
             assertTrue(augmented.systemPrompt.contains("branch: feat/mobile"))
             assertTrue(augmented.systemPrompt.contains("base_sha: abc123"))
             assertTrue(augmented.systemPrompt.contains("baseline_dirty: true"))
-            assertTrue(augmented.systemPrompt.contains("root instruction"))
-            assertTrue(augmented.systemPrompt.contains("child instruction"))
+            assertTrue(augmented.systemPrompt.contains("worktree root instruction"))
+            assertTrue(!augmented.systemPrompt.contains("source checkout instruction should not leak"))
             assertTrue(augmented.systemPrompt.contains("</nova_workspace_context>"))
         } finally {
-            root.deleteRecursively()
+            sourceRoot.deleteRecursively()
+            worktreeRoot.deleteRecursively()
         }
     }
 
