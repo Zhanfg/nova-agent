@@ -1,0 +1,74 @@
+name: One-shot wire workspace tools
+
+on:
+  push:
+    branches:
+      - feat/mobile-codex-workspaces
+    paths:
+      - .github/workflows/one-shot-wire-workspace-tools.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/mobile-codex-workspaces
+          fetch-depth: 0
+
+      - name: Patch AgentLocalTools
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/kotlin/fuck/andes/agent/tool/AgentLocalTools.kt')
+          text = path.read_text()
+          old_field = '''    private val terminalController = RootShellTerminalController(
+              logger = logger,
+              linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
+          )
+          private val publishedObservation = AtomicReference(PublishedObservation())
+'''
+          new_field = '''    private val terminalController = RootShellTerminalController(
+              logger = logger,
+              linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
+          )
+          private val workspaceTools = AgentWorkspaceTools(context, terminalController)
+          private val publishedObservation = AtomicReference(PublishedObservation())
+'''
+          if old_field not in text:
+              raise SystemExit('terminal field anchor not found')
+          text = text.replace(old_field, new_field, 1)
+
+          old_dispatch = '''            deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
+              memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
+'''
+          new_dispatch = '''            deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
+              memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
+              workspaceTools.execute(toolCall.name, args)?.let { workspaceResult ->
+                  return@runCatching textResult(workspaceResult)
+              }
+'''
+          if old_dispatch not in text:
+              raise SystemExit('tool dispatch anchor not found')
+          text = text.replace(old_dispatch, new_dispatch, 1)
+          path.write_text(text)
+          PY
+          git diff --check
+          git diff -- app/src/main/kotlin/fuck/andes/agent/tool/AgentLocalTools.kt
+
+      - name: Commit wiring and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-wire-workspace-tools.yml
+          git add app/src/main/kotlin/fuck/andes/agent/tool/AgentLocalTools.kt
+          git commit -m 'feat: wire workspace tools into AgentLocalTools'
+          git push origin HEAD:feat/mobile-codex-workspaces
