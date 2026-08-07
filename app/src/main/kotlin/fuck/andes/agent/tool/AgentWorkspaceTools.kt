@@ -19,7 +19,7 @@ import org.json.JSONObject
 internal class AgentWorkspaceTools(
     context: Context,
     terminalController: RootShellTerminalController,
-    private val workspaceRegistry: AgentWorkspaceRegistry = AgentWorkspaceRuntimeRegistry.shared,
+    private val workspaceRegistry: AgentWorkspaceRegistry = AgentWorkspaceRuntimeRegistry.get(context),
 ) {
     private val git = RootShellGitExecutor(terminalController)
     private val manager = AgentGitWorkspaceManager(
