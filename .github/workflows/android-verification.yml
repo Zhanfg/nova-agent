@@ -43,10 +43,19 @@ jobs:
             label: 浏览器协议
             patterns: |
               fuck.andes.agent.browser.*
-          - id: ui-state
-            label: UI 状态与持久化
+          - id: ui-persistence
+            label: UI Room 持久化
             patterns: |
-              fuck.andes.ui.app.*
+              fuck.andes.ui.app.AgentConversationStoreTest
+          - id: ui-state
+            label: UI 状态与恢复
+            patterns: |
+              fuck.andes.ui.app.AgentPendingResultRecoveryTest
+              fuck.andes.ui.app.AgentRunEventCoalescerTest
+              fuck.andes.ui.app.AgentRunMessageProjectorTest
+              fuck.andes.ui.app.AgentRuntimeHistoryReducerTest
+              fuck.andes.ui.app.ConversationTimeLabelsTest
+              fuck.andes.ui.app.SkillZipImportGatewayTest
           - id: ui-policy
             label: UI 策略与格式化
             patterns: |
