@@ -180,7 +180,7 @@ internal class AgentGitWorkspaceManager(
     fun diff(workspace: AgentWorkspace, staged: Boolean = false): AgentGitExecutor.Result {
         val cached = if (staged) " --cached" else ""
         return git.execute(
-            "git diff$cached --no-ext-diff --no-color --submodule=diff",
+            "git -c core.quotePath=false diff$cached --no-ext-diff --no-color --submodule=diff",
             workspace.effectivePath,
             DIFF_TIMEOUT_MS,
         )
