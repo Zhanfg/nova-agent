@@ -8,9 +8,10 @@ import fuck.andes.agent.workspace.AgentGitWorkspaceManager
 import fuck.andes.agent.workspace.AgentProjectInstructions
 import fuck.andes.agent.workspace.AgentUnifiedDiffParser
 import fuck.andes.agent.workspace.AgentWorkspace
+import fuck.andes.agent.workspace.AgentWorkspaceRegistry
+import fuck.andes.agent.workspace.AgentWorkspaceRuntimeRegistry
 import fuck.andes.agent.workspace.RootShellGitExecutor
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -18,6 +19,7 @@ import org.json.JSONObject
 internal class AgentWorkspaceTools(
     context: Context,
     terminalController: RootShellTerminalController,
+    private val workspaceRegistry: AgentWorkspaceRegistry = AgentWorkspaceRuntimeRegistry.shared,
 ) {
     private val git = RootShellGitExecutor(terminalController)
     private val manager = AgentGitWorkspaceManager(
@@ -25,7 +27,6 @@ internal class AgentWorkspaceTools(
         worktreeBaseDir = File(context.filesDir, "agent/worktrees").absolutePath,
     )
     private val mutations = AgentGitMutationService(git)
-    private val workspaces = ConcurrentHashMap<String, AgentWorkspace>()
 
     fun execute(name: String, args: JSONObject): String? = when (name) {
         "workspace_inspect" -> inspect(args)
@@ -46,7 +47,7 @@ internal class AgentWorkspaceTools(
     private fun inspect(args: JSONObject): String {
         val result = manager.inspect(args.getString("path"))
         val workspace = result.workspace ?: return error("WORKSPACE_INSPECT_FAILED", result.error ?: "检查失败")
-        workspaces[workspace.workspaceId] = workspace
+        workspaceRegistry.register(workspace)
         return attachProjectInstructions(
             workspaceJson(workspace)
                 .put("ok", true)
@@ -65,7 +66,7 @@ internal class AgentWorkspaceTools(
         )
         val workspace = result.workspace
             ?: return error("WORKTREE_CREATE_FAILED", result.error ?: "创建 worktree 失败")
-        workspaces[workspace.workspaceId] = workspace
+        workspaceRegistry.register(workspace)
         return attachProjectInstructions(
             workspaceJson(workspace).put("ok", true),
             workspace,
@@ -79,7 +80,7 @@ internal class AgentWorkspaceTools(
             force = args.optBoolean("force", false),
         )
         if (failure != null) return error("WORKTREE_REMOVE_FAILED", failure)
-        workspaces.remove(workspace.workspaceId)
+        workspaceRegistry.remove(workspace.workspaceId)
         return JSONObject()
             .put("ok", true)
             .put("workspace_id", workspace.workspaceId)
@@ -199,7 +200,7 @@ internal class AgentWorkspaceTools(
     }
 
     private fun workspace(args: JSONObject): AgentWorkspace? =
-        workspaces[args.optString("workspace_id")]
+        workspaceRegistry.get(args.optString("workspace_id"))
 
     private fun missingWorkspace(args: JSONObject): String = error(
         "WORKSPACE_NOT_FOUND",
