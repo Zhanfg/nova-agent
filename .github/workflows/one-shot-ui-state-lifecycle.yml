@@ -1,0 +1,119 @@
+name: One-shot UI state lifecycle fix
+
+on:
+  push:
+    branches:
+      - fix/ci-baseline-and-nova-branding
+    paths:
+      - .github/workflows/one-shot-ui-state-lifecycle.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/ci-baseline-and-nova-branding
+          fetch-depth: 0
+
+      - name: Patch AgentAppState lifecycle and test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          state_path = Path('app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt')
+          text = state_path.read_text()
+
+          old_ctor = '''internal class AgentAppState(
+              context: Context,
+              private val scope: CoroutineScope,
+              skillZipImportGateway: SkillZipImportGateway? = null,
+          ) {'''
+          new_ctor = '''internal class AgentAppState(
+              context: Context,
+              private val scope: CoroutineScope,
+              skillZipImportGateway: SkillZipImportGateway? = null,
+              startBackgroundWork: Boolean = true,
+          ) {'''
+          if old_ctor not in text:
+              raise SystemExit('AgentAppState constructor anchor not found')
+          text = text.replace(old_ctor, new_ctor, 1)
+
+          old_init = '''    init {
+              refreshConversationSummaries()
+              observeReasoningCapabilities()
+              runtimeRecoveryInProgress.set(true)
+              scope.launch(Dispatchers.IO) {
+                  try {
+                      recoverOrphanedRuns()
+                      importArchivedExternalRuns()
+                  } finally {
+                      runtimeRecoveryInProgress.set(false)
+                  }
+              }
+          }'''
+          new_init = '''    init {
+              refreshConversationSummaries()
+              if (startBackgroundWork) {
+                  observeReasoningCapabilities()
+                  runtimeRecoveryInProgress.set(true)
+                  scope.launch(Dispatchers.IO) {
+                      try {
+                          recoverOrphanedRuns()
+                          importArchivedExternalRuns()
+                      } finally {
+                          runtimeRecoveryInProgress.set(false)
+                      }
+                  }
+              }
+          }'''
+          if old_init not in text:
+              raise SystemExit('AgentAppState init anchor not found')
+          text = text.replace(old_init, new_init, 1)
+          state_path.write_text(text)
+
+          test_path = Path('app/src/test/java/fuck/andes/ui/app/AgentConversationStoreTest.kt')
+          test = test_path.read_text()
+
+          if 'import kotlinx.coroutines.Job\n' not in test:
+              test = test.replace('import kotlinx.coroutines.Dispatchers\n', 'import kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.Job\n')
+          if 'import kotlinx.coroutines.cancelAndJoin\n' not in test:
+              test = test.replace('import kotlinx.coroutines.cancel\n', 'import kotlinx.coroutines.cancelAndJoin\n')
+
+          old_state = '            val state = AgentAppState(context, scope)\n'
+          new_state = '''            val state = AgentAppState(
+                  context = context,
+                  scope = scope,
+                  startBackgroundWork = false,
+              )
+'''
+          if old_state not in test:
+              raise SystemExit('AgentConversationStoreTest state anchor not found')
+          test = test.replace(old_state, new_state, 1)
+
+          old_cancel = '            scope.cancel()\n'
+          new_cancel = '            runBlocking { scope.coroutineContext[Job]?.cancelAndJoin() }\n'
+          if old_cancel not in test:
+              raise SystemExit('AgentConversationStoreTest cancel anchor not found')
+          test = test.replace(old_cancel, new_cancel, 1)
+          test_path.write_text(test)
+          PY
+
+          git diff --check
+          git diff -- app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt app/src/test/java/fuck/andes/ui/app/AgentConversationStoreTest.kt
+
+      - name: Commit lifecycle fix and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-ui-state-lifecycle.yml
+          git add app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt app/src/test/java/fuck/andes/ui/app/AgentConversationStoreTest.kt
+          git commit -m 'test: isolate AgentAppState background lifecycle'
+          git push origin HEAD:fix/ci-baseline-and-nova-branding
