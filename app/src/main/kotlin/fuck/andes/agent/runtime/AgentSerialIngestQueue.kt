@@ -21,6 +21,16 @@ internal class AgentSerialIngestQueue<T : Any>(
         data object RejectedFull : SubmitResult
     }
 
+    sealed interface RemoveResult<out T> {
+        data class RemovedActive<T>(
+            val item: T,
+            val next: T?,
+        ) : RemoveResult<T>
+
+        data class RemovedWaiting<T>(val item: T) : RemoveResult<T>
+        data object NotFound : RemoveResult<Nothing>
+    }
+
     fun submit(item: T): SubmitResult {
         if (activeItem == null) {
             activeItem = item
@@ -40,8 +50,26 @@ internal class AgentSerialIngestQueue<T : Any>(
     fun complete(item: T): T? {
         if (activeItem !== item) return null
         activeItem = null
-        if (waiting.isEmpty()) return null
-        return waiting.removeFirst().also { next -> activeItem = next }
+        return promoteNext()
+    }
+
+    /**
+     * Removes exactly one matching item without disturbing unrelated requests. If the active item
+     * is removed, the next waiter is promoted immediately and returned to the caller so ingestion
+     * can continue without a gap.
+     */
+    fun removeFirst(predicate: (T) -> Boolean): RemoveResult<T> {
+        activeItem?.takeIf(predicate)?.let { active ->
+            activeItem = null
+            return RemoveResult.RemovedActive(
+                item = active,
+                next = promoteNext(),
+            )
+        }
+
+        val queued = waiting.firstOrNull(predicate) ?: return RemoveResult.NotFound
+        waiting.remove(queued)
+        return RemoveResult.RemovedWaiting(queued)
     }
 
     /** Returns and clears active + queued items in arrival order. */
@@ -53,4 +81,9 @@ internal class AgentSerialIngestQueue<T : Any>(
     }
 
     fun waitingCount(): Int = waiting.size
+
+    private fun promoteNext(): T? {
+        if (waiting.isEmpty()) return null
+        return waiting.removeFirst().also { next -> activeItem = next }
+    }
 }
