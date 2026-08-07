@@ -43,10 +43,30 @@ jobs:
             label: 浏览器协议
             patterns: |
               fuck.andes.agent.browser.*
-          - id: ui-persistence
-            label: UI Room 持久化
+          - id: ui-persistence-roundtrip
+            label: UI Room · 基础往返
             patterns: |
-              fuck.andes.ui.app.AgentConversationStoreTest
+              fuck.andes.ui.app.AgentConversationStoreTest.saveAndLoadPreservesConversations
+          - id: ui-persistence-effort
+            label: UI Room · Reasoning 回退
+            patterns: |
+              fuck.andes.ui.app.AgentConversationStoreTest.unknownStoredEffortFallsBackToDefault
+          - id: ui-persistence-large
+            label: UI Room · 大会话完整性
+            patterns: |
+              fuck.andes.ui.app.AgentConversationStoreTest.saveAndLoadPreservesAllConversationsAndMessagesWithoutClipping
+          - id: ui-persistence-empty-load
+            label: UI Room · 空库加载
+            patterns: |
+              fuck.andes.ui.app.AgentConversationStoreTest.loadKeepsDatabaseEmptyUntilFirstMessageIsSent
+          - id: ui-persistence-draft
+            label: UI Room · 草稿隔离
+            patterns: |
+              fuck.andes.ui.app.AgentConversationStoreTest.creatingConversationKeepsDraftOutOfHistoryAndDatabase
+          - id: ui-persistence-clear
+            label: UI Room · 清空快照
+            patterns: |
+              fuck.andes.ui.app.AgentConversationStoreTest.savingEmptySnapshotClearsPreviouslyPersistedConversations
           - id: ui-state
             label: UI 状态与恢复
             patterns: |
