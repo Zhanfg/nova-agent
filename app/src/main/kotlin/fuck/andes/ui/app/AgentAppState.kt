@@ -77,6 +77,7 @@ internal class AgentAppState(
     context: Context,
     private val scope: CoroutineScope,
     skillZipImportGateway: SkillZipImportGateway? = null,
+    startBackgroundWork: Boolean = true,
 ) {
     private val appContext = context.applicationContext
     private val skillZipImportGateway = skillZipImportGateway ?: CoreSkillZipImportGateway(appContext)
@@ -132,14 +133,16 @@ internal class AgentAppState(
 
     init {
         refreshConversationSummaries()
-        observeReasoningCapabilities()
-        runtimeRecoveryInProgress.set(true)
-        scope.launch(Dispatchers.IO) {
-            try {
-                recoverOrphanedRuns()
-                importArchivedExternalRuns()
-            } finally {
-                runtimeRecoveryInProgress.set(false)
+        if (startBackgroundWork) {
+            observeReasoningCapabilities()
+            runtimeRecoveryInProgress.set(true)
+            scope.launch(Dispatchers.IO) {
+                try {
+                    recoverOrphanedRuns()
+                    importArchivedExternalRuns()
+                } finally {
+                    runtimeRecoveryInProgress.set(false)
+                }
             }
         }
     }

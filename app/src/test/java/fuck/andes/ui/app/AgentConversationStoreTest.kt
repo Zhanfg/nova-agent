@@ -21,8 +21,9 @@ import org.junit.Test
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -233,7 +234,11 @@ class AgentConversationStoreTest {
     fun creatingConversationKeepsDraftOutOfHistoryAndDatabase() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         try {
-            val state = AgentAppState(context, scope)
+            val state = AgentAppState(
+                context = context,
+                scope = scope,
+                startBackgroundWork = false,
+            )
 
             state.createConversation()
             state.updateInput("尚未发送的草稿")
@@ -247,7 +252,7 @@ class AgentConversationStoreTest {
                 }
             )
         } finally {
-            scope.cancel()
+            runBlocking { scope.coroutineContext[Job]?.cancelAndJoin() }
         }
     }
 
