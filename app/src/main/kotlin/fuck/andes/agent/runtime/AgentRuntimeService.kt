@@ -314,6 +314,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         mainHandler.removeCallbacksAndMessages(hideToken)
+        clearTerminalAndExpandedOverlayWindows()
         state.value = AgentOverlayState.Initial
         collapsed.value = true
         hasExecutedForegroundTool = false
@@ -465,6 +466,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     ) {
         mainHandler.post {
             if (activeSession !== session) return@post
+            if (runQueue.isNotEmpty()) {
+                // 排队任务会立即接管运行态；中间结果已通过 IPC 返回，不显示终态卡片，
+                // 也不停止 Service，避免旧窗口覆盖下一任务。
+                lastCompletedRunContext = null
+                activeSession = null
+                return@post
+            }
             lastCompletedRunContext = completedContext
             activeSession = null
             runCatching {
@@ -711,6 +719,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             index = supplement.index,
             text = supplement.text,
         )
+    }
+
+    private fun clearTerminalAndExpandedOverlayWindows() {
+        val wm = windowManager
+        resultCardView?.let { view -> runCatching { wm?.removeView(view) } }
+        bubbleView?.let { view -> runCatching { wm?.removeView(view) } }
+        resultCardView = null
+        bubbleView = null
+        resultCardParams = null
+        bubbleParams = null
     }
 
     private fun ensureOverlayVisible() {
