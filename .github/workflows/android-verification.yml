@@ -59,10 +59,18 @@ jobs:
             label: UI Room · 空库加载
             patterns: |
               fuck.andes.ui.app.AgentConversationStoreTest.loadKeepsDatabaseEmptyUntilFirstMessageIsSent
-          - id: ui-persistence-draft
-            label: UI Room · 草稿隔离
+          - id: ui-draft-construction
+            label: UI 草稿 · 构造生命周期
             patterns: |
-              fuck.andes.ui.app.AgentConversationStoreTest.creatingConversationKeepsDraftOutOfHistoryAndDatabase
+              fuck.andes.ui.app.AgentDraftIsolationDiagnosticTest.appStateConstructionLeavesNoBackgroundChildren
+          - id: ui-draft-state
+            label: UI 草稿 · 纯状态隔离
+            patterns: |
+              fuck.andes.ui.app.AgentDraftIsolationDiagnosticTest.draftStateOperationsRemainEphemeralInMemory
+          - id: ui-draft-room
+            label: UI 草稿 · 构造后 Room
+            patterns: |
+              fuck.andes.ui.app.AgentDraftIsolationDiagnosticTest.roomRemainsReadableAfterStateConstruction
           - id: ui-persistence-clear
             label: UI Room · 清空快照
             patterns: |
