@@ -388,12 +388,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun startNextQueuedRun() {
-        val next = runQueue.removeFirstOrNull() ?: return
-        startRun(next.request, next.replyTo)
-        sendEventTo(
-            next.replyTo,
-            AgentEvent.RunQueueStarted(runId = next.request.runId, queueSize = runQueue.size),
-        )
+        // executeRun 在工作线程结束。队列本身、Compose 状态、Service 生命周期和浮层状态
+        // 都由主线程管理，必须把下一任务的出队与启动一起切回主线程。
+        mainHandler.post {
+            val next = runQueue.removeFirstOrNull() ?: return@post
+            startRun(next.request, next.replyTo)
+            sendEventTo(
+                next.replyTo,
+                AgentEvent.RunQueueStarted(runId = next.request.runId, queueSize = runQueue.size),
+            )
+        }
     }
 
     private fun handleAcceptedRunEvent(
