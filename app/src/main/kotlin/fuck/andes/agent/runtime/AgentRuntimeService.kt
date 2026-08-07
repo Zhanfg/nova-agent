@@ -271,8 +271,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         val constrained = request.copy(
                             config = AgentRuntimePolicy.constrain(request.config, permissions),
                         )
-                        val current = activeSession
-                        if (current != null && !current.isTerminal) {
+                        if (shouldQueueNewRun()) {
                             enqueueOrReject(constrained, replyTo)
                         } else {
                             startRun(constrained, replyTo)
@@ -365,6 +364,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         } finally {
             startNextQueuedRun(session)
         }
+    }
+
+    private fun shouldQueueNewRun(): Boolean {
+        val current = activeSession
+        return (current != null && !current.isTerminal) || runQueue.isNotEmpty()
     }
 
     private fun enqueueOrReject(
@@ -640,11 +644,27 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
             return
         }
-        if (runQueue.isNotEmpty()) {
-            runQueue.clear()
-            AndroidAgentLogger.info("Agent run queue cleared by cancel: runId=$runId")
+        val queued = runQueue.firstOrNull { it.request.runId == runId }
+        if (queued != null) {
+            runQueue.remove(queued)
+            sendResultTo(
+                queued.replyTo,
+                AgentRuntimeWire.RunResult(
+                    runId = runId,
+                    ok = false,
+                    content = "",
+                    error = "已停止",
+                ),
+            )
+            AndroidAgentLogger.info(
+                "Queued Agent run cancelled: runId=$runId, queueSize=${runQueue.size}"
+            )
+            return
         }
-        val session = activeSession ?: return
+        val session = activeSession ?: run {
+            AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
+            return
+        }
         if (runId != session.runId) {
             AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
             return
