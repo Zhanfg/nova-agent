@@ -120,7 +120,6 @@ internal class AgentGitWorkspaceManager(
 
         val head = requiredGit("git rev-parse HEAD", target)
         if (head == null) {
-            // Best effort cleanup of a half-created worktree.
             git.execute(
                 "git worktree remove --force ${AgentShellQuote.quote(target)}",
                 repositoryRoot,
@@ -203,6 +202,7 @@ internal class AgentGitWorkspaceManager(
         private const val DEFAULT_TIMEOUT_MS = 30_000
         private const val DIFF_TIMEOUT_MS = 60_000
         private const val WORKTREE_TIMEOUT_MS = 90_000
+        private val INVALID_REF_CHARS = setOf('~', '^', ':', '?', '*', '[', '\\')
 
         internal fun sanitizeSlug(value: String): String =
             value.lowercase()
@@ -215,7 +215,7 @@ internal class AgentGitWorkspaceManager(
             if (value.isBlank() || value.length > 180) return false
             if (value.startsWith('-') || value.endsWith('/') || value.endsWith('.')) return false
             if (".." in value || "//" in value || "@{" in value) return false
-            if (value.any { it.isWhitespace() || it.code < 0x20 || it in "~^:?*[\\" }) return false
+            if (value.any { it.isWhitespace() || it.code < 0x20 || it in INVALID_REF_CHARS }) return false
             return value.split('/').all { part ->
                 part.isNotBlank() &&
                     part != "." &&
