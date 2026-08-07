@@ -656,7 +656,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             replyTo,
             AgentRuntimeWire.RunResult(runId = "", ok = false, content = "", error = message),
         )
-        if (activeSession != null) return
+        if (
+            activeSession != null ||
+            pendingStartRequests.active() != null ||
+            pendingStartRequests.waitingCount() > 0 ||
+            runQueue.isNotEmpty()
+        ) {
+            return
+        }
         enterFinalState(
             AgentOverlayState(
                 phase = AgentOverlayPhase.FAILED,
