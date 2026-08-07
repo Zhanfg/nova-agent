@@ -72,4 +72,20 @@ class AgentRunQueuePolicyTest {
         assertNull(removed)
         assertEquals(listOf("keep-1", "keep-2"), queue.map { it.runId })
     }
+
+    @Test
+    fun shutdownDrainReturnsEveryQueuedRunInOrderAndClearsQueue() {
+        val queue = ArrayDeque(
+            listOf(
+                Queued("run-1"),
+                Queued("run-2"),
+                Queued("run-3"),
+            )
+        )
+
+        val drained = AgentRunQueuePolicy.drain(queue)
+
+        assertEquals(listOf("run-1", "run-2", "run-3"), drained.map { it.runId })
+        assertTrue(queue.isEmpty())
+    }
 }
