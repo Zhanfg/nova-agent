@@ -10,7 +10,7 @@ internal object AgentGoalToolCatalog {
         tools.put(
             function(
                 AgentGoalSession.TOOL_BEGIN,
-                "开启 Goal mode。适用于需要持续执行直到明确验收的工程任务；开启后，在所有 success criteria 都有 passed 证据前不能正常结束。",
+                "开启 Goal mode。适用于需要持续执行直到明确验收的工程任务；开启后，在所有 success criteria 都有真实工具执行证据前不能正常结束。",
                 JSONObject()
                     .put("goal_id", string("可选稳定 Goal ID；为空时自动生成"))
                     .put("goal", string("任务最终目标"))
@@ -40,7 +40,7 @@ internal object AgentGoalToolCatalog {
                             .put("items", JSONObject().put("type", "string")),
                     )
                     .put("verification_plan", string("完成后如何验证每一项 success criterion"))
-                    .put("max_steps", integer("最多允许的 Agent 轮次/步骤，默认 200", 1, 1000))
+                    .put("max_steps", integer("最多允许的 Goal 轮次/步骤，默认 200", 1, 1000))
                     .put("max_duration_ms", integer("最长 Goal 时长（毫秒），默认 1 小时", 1000, 86_400_000)),
                 required = listOf("goal", "success_criteria", "verification_plan"),
             )
@@ -48,24 +48,18 @@ internal object AgentGoalToolCatalog {
         tools.put(
             function(
                 AgentGoalSession.TOOL_EVIDENCE,
-                "记录某个 success criterion 的验证证据。只有 passed 证据会满足完成门禁；failed 证据必须修复并重新验证。",
+                "把已经真实执行过的普通工具结果绑定到某个 success criterion。必须引用同一 Goal 激活后执行、且结果包含结构化 ok 布尔值的 tool_call_id；passed/failed 由实际 ok 自动推导，不能由模型自报。",
                 JSONObject()
                     .put("criterion_id", string("goal_begin 中定义的 criterion ID"))
-                    .put(
-                        "status",
-                        JSONObject()
-                            .put("type", "string")
-                            .put("enum", JSONArray().put("passed").put("failed")),
-                    )
-                    .put("summary", string("实际验证结果摘要，不得只写计划或猜测"))
-                    .put("source", string("证据来源，例如 test、lint、build、git diff、device check")),
-                required = listOf("criterion_id", "status", "summary", "source"),
+                    .put("tool_call_id", string("此前真实执行的普通工具调用 ID；其结果必须含明确 ok=true/false"))
+                    .put("summary", string("该真实工具结果与 criterion 的关系摘要，不得只写计划或猜测")),
+                required = listOf("criterion_id", "tool_call_id", "summary"),
             )
         )
         tools.put(
             function(
                 AgentGoalSession.TOOL_STATUS,
-                "读取当前 Goal、各 success criterion 的最新证据和完成状态。",
+                "读取当前 Goal、各 success criterion 的最新验证证据及其真实工具来源。",
                 JSONObject(),
             )
         )
