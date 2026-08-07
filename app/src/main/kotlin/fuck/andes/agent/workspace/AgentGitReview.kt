@@ -61,8 +61,7 @@ internal object AgentUnifiedDiffParser {
                 continue
             }
 
-            val header = lines[index]
-            val paths = parseDiffGitPaths(header)
+            val paths = parseDiffGitPaths(lines[index])
             var oldPath = paths.first
             var newPath = paths.second
             var added = false
@@ -78,11 +77,11 @@ internal object AgentUnifiedDiffParser {
                     line.startsWith("deleted file mode ") -> deleted = true
                     line.startsWith("rename from ") -> {
                         renamed = true
-                        oldPath = line.removePrefix("rename from ").trim()
+                        oldPath = decodeGitPath(line.removePrefix("rename from ").trim())
                     }
                     line.startsWith("rename to ") -> {
                         renamed = true
-                        newPath = line.removePrefix("rename to ").trim()
+                        newPath = decodeGitPath(line.removePrefix("rename to ").trim())
                     }
                     line.startsWith("--- ") -> {
                         oldPath = parsePatchPath(line.removePrefix("--- "))
@@ -127,6 +126,11 @@ internal object AgentUnifiedDiffParser {
 
     private data class ParsedHunk(
         val hunk: AgentGitChangeSet.Hunk,
+        val nextIndex: Int,
+    )
+
+    private data class ParsedToken(
+        val value: String,
         val nextIndex: Int,
     )
 
@@ -216,18 +220,81 @@ internal object AgentUnifiedDiffParser {
     }
 
     private fun parsePatchPath(value: String): String? {
-        val path = value.substringBefore('\t').trim()
-        if (path == "/dev/null") return null
-        return path.removePrefix("a/").removePrefix("b/")
+        val raw = parseGitToken(value, 0)?.value ?: value.substringBefore('\t').trim()
+        if (raw == "/dev/null") return null
+        return stripPatchPrefix(raw)
     }
 
     private fun parseDiffGitPaths(header: String): Pair<String?, String?> {
         val payload = header.removePrefix("diff --git ")
-        val marker = " b/"
-        val split = payload.indexOf(marker)
-        if (split < 0) return null to null
-        val old = payload.substring(0, split).removePrefix("a/").trim()
-        val new = payload.substring(split + 1).removePrefix("b/").trim()
-        return old to new
+        val first = parseGitToken(payload, 0) ?: return null to null
+        val second = parseGitToken(payload, first.nextIndex) ?: return null to null
+        return stripPatchPrefix(first.value) to stripPatchPrefix(second.value)
+    }
+
+    private fun parseGitToken(input: String, startIndex: Int): ParsedToken? {
+        var index = startIndex
+        while (index < input.length && input[index].isWhitespace()) index++
+        if (index >= input.length) return null
+
+        if (input[index] != '"') {
+            val end = input.indexOfFirstFrom(index) { it.isWhitespace() }
+                .let { if (it < 0) input.length else it }
+            return ParsedToken(input.substring(index, end), end)
+        }
+
+        index++
+        val value = StringBuilder()
+        while (index < input.length) {
+            val ch = input[index++]
+            when (ch) {
+                '"' -> return ParsedToken(value.toString(), index)
+                '\\' -> {
+                    if (index >= input.length) {
+                        value.append('\\')
+                        break
+                    }
+                    val escaped = input[index++]
+                    when (escaped) {
+                        '\\' -> value.append('\\')
+                        '"' -> value.append('"')
+                        't' -> value.append('\t')
+                        'n' -> value.append('\n')
+                        'r' -> value.append('\r')
+                        'b' -> value.append('\b')
+                        'f' -> value.append('\u000C')
+                        'v' -> value.append('\u000B')
+                        in '0'..'7' -> {
+                            var octal = escaped.toString()
+                            repeat(2) {
+                                if (index < input.length && input[index] in '0'..'7') {
+                                    octal += input[index++]
+                                }
+                            }
+                            value.append(octal.toInt(8).toChar())
+                        }
+                        else -> value.append(escaped)
+                    }
+                }
+                else -> value.append(ch)
+            }
+        }
+        return ParsedToken(value.toString(), index)
+    }
+
+    private fun decodeGitPath(raw: String): String =
+        parseGitToken(raw, 0)?.value ?: raw
+
+    private fun stripPatchPrefix(path: String): String =
+        path.removePrefix("a/").removePrefix("b/")
+
+    private inline fun String.indexOfFirstFrom(
+        startIndex: Int,
+        predicate: (Char) -> Boolean,
+    ): Int {
+        for (index in startIndex until length) {
+            if (predicate(this[index])) return index
+        }
+        return -1
     }
 }
