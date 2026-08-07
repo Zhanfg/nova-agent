@@ -285,8 +285,13 @@ internal object AgentUnifiedDiffParser {
     private fun decodeGitPath(raw: String): String =
         parseGitToken(raw, 0)?.value ?: raw
 
+    /** Git patch headers add exactly one synthetic a/ or b/ prefix. Never strip twice. */
     private fun stripPatchPrefix(path: String): String =
-        path.removePrefix("a/").removePrefix("b/")
+        when {
+            path.startsWith("a/") -> path.removePrefix("a/")
+            path.startsWith("b/") -> path.removePrefix("b/")
+            else -> path
+        }
 
     private inline fun String.indexOfFirstFrom(
         startIndex: Int,
