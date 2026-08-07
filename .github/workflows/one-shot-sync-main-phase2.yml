@@ -21,13 +21,56 @@ jobs:
           ref: feat/mobile-codex-workspaces
           fetch-depth: 0
 
-      - name: Merge current main
+      - name: Merge current main and resolve baseline-only conflicts
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name 'Axymorrsen'
           git config user.email 'Axymosen@outlook.com'
           git fetch origin main
+
+          set +e
           git merge --no-edit origin/main
+          merge_status=$?
+          set -e
+
+          if [[ $merge_status -ne 0 ]]; then
+            expected_conflicts=(
+              '.github/workflows/android-verification.yml'
+              'app/src/main/kotlin/fuck/andes/agent/runtime/AgentRunQueuePolicy.kt'
+              'app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt'
+              'app/src/main/kotlin/fuck/andes/agent/runtime/AgentSerialIngestQueue.kt'
+              'app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt'
+              'app/src/test/java/fuck/andes/agent/runtime/AgentRunQueuePolicyTest.kt'
+              'app/src/test/java/fuck/andes/agent/runtime/AgentSerialIngestQueueTest.kt'
+              'app/src/test/java/fuck/andes/ui/app/AgentConversationStoreTest.kt'
+              'docs/TESTING.md'
+            )
+
+            mapfile -t actual_conflicts < <(git diff --name-only --diff-filter=U | sort)
+            mapfile -t expected_sorted < <(printf '%s\n' "${expected_conflicts[@]}" | sort)
+
+            if [[ "$(printf '%s\n' "${actual_conflicts[@]}")" != "$(printf '%s\n' "${expected_sorted[@]}")" ]]; then
+              echo 'Unexpected merge conflict set; refusing automatic resolution.' >&2
+              printf 'Actual:\n%s\n' "${actual_conflicts[*]}" >&2
+              exit 1
+            fi
+
+            # These files are baseline-only on Phase 2. #1 continued changing them after the
+            # stacked branch was cut, so the merged main version is authoritative.
+            for path in "${expected_conflicts[@]}"; do
+              git checkout --theirs -- "$path"
+              git add "$path"
+            done
+
+            if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+              echo 'Unresolved conflicts remain.' >&2
+              git diff --name-only --diff-filter=U >&2
+              exit 1
+            fi
+
+            git commit --no-edit
+          fi
 
       - name: Remove helper and push synchronized branch
         shell: bash
