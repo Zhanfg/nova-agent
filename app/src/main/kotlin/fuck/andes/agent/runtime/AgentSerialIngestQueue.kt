@@ -43,6 +43,10 @@ internal class AgentSerialIngestQueue<T : Any>(
 
     fun active(): T? = activeItem
 
+    /** True when the active item or any waiter matches [predicate]. */
+    fun any(predicate: (T) -> Boolean): Boolean =
+        activeItem?.let(predicate) == true || waiting.any(predicate)
+
     /**
      * Completes only the exact active object. A stale worker cannot advance or corrupt the queue.
      * Returns the next item that should start ingestion, if any.
