@@ -6,9 +6,11 @@ Nova 的单元测试必须验证目标逻辑，而不是意外启动与测试无
 
 `AgentAppState` 生产环境默认启动模型能力 Flow 观察与 Runtime 结果恢复。针对纯状态/持久化逻辑的 JVM/Robolectric 测试应使用 `startBackgroundWork = false`，避免为了验证本地状态变换而创建无限 Flow collector 或 Runtime IPC 恢复任务。
 
+纯状态模式下 `probePlatformState` 默认跟随 `startBackgroundWork` 关闭，因此不会在构造阶段同步探测 Root、无障碍、通知、Usage Access、定位等设备状态。生产默认仍为开启；如果某个测试就是为了验证平台状态，可显式设置 `probePlatformState = true`。
+
 纯状态测试如果并不验证 Room 初始恢复，还应通过 `initialConversationSnapshot` 注入确定性的 Snapshot；生产默认值仍为 `null`，因此正常 App 启动仍会从 `AgentConversationStore` 恢复历史。这样可以避免状态测试在构造 `AgentAppState` 时隐式打开第二轮 Room 数据库。
 
-如果测试显式创建 `CoroutineScope`，结束时必须等待该 scope 的根 `Job` 完成取消，而不只是发出异步 `cancel()` 信号。Room 测试同时调用 `FuckAndesDatabase.closeForTests()` 并清理测试数据库。
+如果测试显式创建 `CoroutineScope`，应先断言纯状态路径没有遗留 child job，再取消测试拥有的 root Job。不要用与目标逻辑无关的无限等待掩盖生命周期问题。Room 测试同时调用 `FuckAndesDatabase.closeForTests()` 并清理测试数据库。
 
 ## CI 分片
 
