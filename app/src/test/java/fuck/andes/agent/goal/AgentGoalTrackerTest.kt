@@ -31,6 +31,24 @@ class AgentGoalTrackerTest {
     }
 
     @Test
+    fun verifiedSuccessWinsWhenBookkeepingReachesBudgetBoundaryNextRound() {
+        val tracker = tracker(
+            budget = AgentGoal.Budget(
+                maxSteps = 2,
+                maxDurationMillis = 100,
+                maxTokens = 1_000,
+            )
+        )
+        tracker.recordEvidence(evidence("build", CriterionStatus.PASSED))
+        tracker.recordEvidence(evidence("tests", CriterionStatus.PASSED))
+        tracker.updateUsage(steps = 2, tokens = 1_000, costMicros = 0)
+
+        val state = tracker.evaluate(nowMillis = 100L)
+
+        assertTrue(state is State.Succeeded)
+    }
+
+    @Test
     fun failedVerificationDoesNotPretendTaskIsComplete() {
         val tracker = tracker()
         tracker.recordEvidence(evidence("build", CriterionStatus.PASSED))
