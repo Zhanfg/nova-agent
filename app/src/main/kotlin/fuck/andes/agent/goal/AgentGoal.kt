@@ -102,6 +102,21 @@ internal class AgentGoalTracker(
 
     fun evaluate(nowMillis: Long): State {
         terminalState?.let { return it }
+
+        // Once every success criterion has concrete PASSED evidence, the work was completed within
+        // the previous execution step. Do not let the bookkeeping check performed at the start of
+        // the next model round retroactively turn that verified success into BudgetExceeded.
+        val allPassed = goal.successCriteria.all {
+            latestEvidenceByCriterion[it.id]?.status == CriterionStatus.PASSED
+        }
+        if (allPassed) {
+            return State.Succeeded(
+                evidence = goal.successCriteria.map { criterion ->
+                    latestEvidenceByCriterion.getValue(criterion.id)
+                }
+            ).also { terminalState = it }
+        }
+
         budgetExceeded(nowMillis)?.let { reason ->
             return State.BudgetExceeded(reason).also { terminalState = it }
         }
@@ -111,16 +126,7 @@ internal class AgentGoalTracker(
             .map { it.id }
         if (failed.isNotEmpty()) return State.VerificationFailed(failed)
 
-        val allPassed = goal.successCriteria.all {
-            latestEvidenceByCriterion[it.id]?.status == CriterionStatus.PASSED
-        }
-        if (!allPassed) return State.Running
-
-        return State.Succeeded(
-            evidence = goal.successCriteria.map { criterion ->
-                latestEvidenceByCriterion.getValue(criterion.id)
-            }
-        ).also { terminalState = it }
+        return State.Running
     }
 
     fun block(reason: String): State.Blocked {
