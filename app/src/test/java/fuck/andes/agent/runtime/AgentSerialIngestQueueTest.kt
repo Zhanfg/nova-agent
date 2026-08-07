@@ -3,7 +3,9 @@ package fuck.andes.agent.runtime
 import fuck.andes.agent.runtime.AgentSerialIngestQueue.RemoveResult
 import fuck.andes.agent.runtime.AgentSerialIngestQueue.SubmitResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSerialIngestQueueTest {
@@ -45,6 +47,21 @@ class AgentSerialIngestQueueTest {
         assertEquals(second, queue.complete(first))
         assertEquals(third, queue.complete(second))
         assertNull(queue.complete(third))
+    }
+
+    @Test
+    fun anyFindsActiveAndWaitingItemsWithoutChangingOrder() {
+        val queue = AgentSerialIngestQueue<Request>(maxWaiting = 2)
+        val active = Request("active")
+        val waiting = Request("waiting")
+        queue.submit(active)
+        queue.submit(waiting)
+
+        assertTrue(queue.any { it.runId == "active" })
+        assertTrue(queue.any { it.runId == "waiting" })
+        assertFalse(queue.any { it.runId == "missing" })
+        assertEquals(active, queue.active())
+        assertEquals(waiting, queue.complete(active))
     }
 
     @Test
