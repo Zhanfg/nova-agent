@@ -25,13 +25,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - id: model
+            label: 模型协议与循环
+            patterns: |
+              fuck.andes.agent.model.*
           - id: runtime-ui
-            label: 模型、运行时与界面
+            label: 运行时与界面
             patterns: |
               fuck.andes.agent.browser.*
               fuck.andes.agent.media.*
               fuck.andes.agent.memory.*
-              fuck.andes.agent.model.*
               fuck.andes.agent.overlay.*
               fuck.andes.agent.runtime.*
               fuck.andes.ui.*
