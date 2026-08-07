@@ -78,7 +78,8 @@ jobs:
         run: |
           release_apk="app/build/outputs/apk/release/app-release.apk"
           output_dir="$RUNNER_TEMP/apks"
-          output_apk="$output_dir/Nova-${GITHUB_REF_NAME}.apk"
+          safe_ref="${GITHUB_REF_NAME//\//-}"
+          output_apk="$output_dir/Nova-${safe_ref}.apk"
           apksigner_path="$(find "$ANDROID_HOME/build-tools" \
             -type f -name apksigner | sort -V | tail -n 1)"
 
@@ -97,11 +98,12 @@ jobs:
           sha256sum "$output_apk" > "$output_apk.sha256"
           echo "apk=$output_apk" >> "$GITHUB_OUTPUT"
           echo "checksum=$output_apk.sha256" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=nova-release-$safe_ref" >> "$GITHUB_OUTPUT"
 
       - name: 上传 Release APK 与校验文件
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: nova-release-${{ github.ref_name }}
+          name: ${{ steps.apk.outputs.artifact_name }}
           path: |
             ${{ steps.apk.outputs.apk }}
             ${{ steps.apk.outputs.checksum }}
