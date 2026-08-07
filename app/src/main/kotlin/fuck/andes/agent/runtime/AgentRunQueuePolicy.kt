@@ -21,4 +21,15 @@ internal object AgentRunQueuePolicy {
         queue.remove(target)
         return target
     }
+
+    /**
+     * Service shutdown is terminal for every queued request. Return each item exactly once while
+     * clearing the source queue so callers can deliver an explicit failure instead of making
+     * clients wait for their transport timeout.
+     */
+    fun <T> drain(queue: ArrayDeque<T>): List<T> = buildList(queue.size) {
+        while (queue.isNotEmpty()) {
+            add(queue.removeFirst())
+        }
+    }
 }
