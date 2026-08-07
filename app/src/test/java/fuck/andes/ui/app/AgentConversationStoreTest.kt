@@ -15,11 +15,13 @@ import fuck.andes.ui.model.UserMessageUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.runner.RunWith
@@ -35,6 +37,12 @@ class AgentConversationStoreTest {
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
+        FuckAndesDatabase.closeForTests()
+        context.deleteDatabase("fuck_andes.db")
+    }
+
+    @After
+    fun tearDown() {
         FuckAndesDatabase.closeForTests()
         context.deleteDatabase("fuck_andes.db")
     }
@@ -226,7 +234,17 @@ class AgentConversationStoreTest {
     fun creatingConversationKeepsDraftOutOfHistoryAndDatabase() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         try {
-            val state = AgentAppState(context, scope)
+            val state = AgentAppState(
+                context = context,
+                scope = scope,
+                startBackgroundWork = false,
+                initialConversationSnapshot = AgentConversationStore.Snapshot(
+                    selectedConversationId = null,
+                    conversationsById = emptyMap(),
+                    titles = emptyMap(),
+                    updatedAt = emptyMap(),
+                ),
+            )
 
             state.createConversation()
             state.updateInput("尚未发送的草稿")
@@ -239,7 +257,15 @@ class AgentConversationStoreTest {
                     FuckAndesDatabase.get(context).conversationDao().conversations().isEmpty()
                 }
             )
+
+            val rootJob = requireNotNull(scope.coroutineContext[Job])
+            assertTrue(
+                "startBackgroundWork=false 时纯状态操作不应遗留后台协程",
+                rootJob.children.none(),
+            )
         } finally {
+            // 上面已经断言没有 child；这里只负责终止测试拥有的 root Job，避免 cancelAndJoin
+            // 在 Robolectric Main dispatcher 生命周期外等待一个与目标逻辑无关的 Job。
             scope.cancel()
         }
     }

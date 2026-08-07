@@ -33,7 +33,8 @@ import org.robolectric.shadows.ShadowContentResolver
 class AgentImageCodecTest {
     @Test
     fun screenCopyUsesFullResolutionLosslessWebp() {
-        val bitmap = patternedBitmap(width = 1_200, height = 2_400)
+        // 只需验证不缩放与像素无损；避免在 Robolectric 中使用数百万像素样本拖慢 CI。
+        val bitmap = patternedBitmap(width = 360, height = 720)
         try {
             val image = AgentImageCodec.fromScreenBitmap(bitmap, source = "screen")
             val width = image.width ?: error("缺少图片宽度")
@@ -57,7 +58,7 @@ class AgentImageCodecTest {
 
     @Test
     fun encodedScreenBytesNeverLosePixelsOrDimensions() {
-        val bitmap = patternedBitmap(width = 900, height = 1_800)
+        val bitmap = patternedBitmap(width = 320, height = 640)
         val png = ByteArrayOutputStream().use { output ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
             output.toByteArray()
@@ -79,7 +80,7 @@ class AgentImageCodecTest {
 
     @Test
     fun largeAttachmentKeepsOriginalBytesAndDimensions() {
-        val bitmap = patternedBitmap(width = 2_400, height = 1_600)
+        val bitmap = patternedBitmap(width = 1_200, height = 800)
         val original = ByteArrayOutputStream().use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
             output.toByteArray()
@@ -95,8 +96,8 @@ class AgentImageCodecTest {
         val height = image.height ?: error("缺少图片高度")
 
         assertEquals("image/jpeg", image.mimeType)
-        assertEquals(2_400, width)
-        assertEquals(1_600, height)
+        assertEquals(1_200, width)
+        assertEquals(800, height)
         assertEquals(original.size, image.bytes)
         assertArrayEquals(original, image.reference.decodeDataUrl())
     }
@@ -126,7 +127,8 @@ class AgentImageCodecTest {
     fun fileToolImageIsDownscaledForMultiImageRequests() {
         val context = RuntimeEnvironment.getApplication()
         val sourceFile = File(context.cacheDir, "tool-image-${System.nanoTime()}.jpg")
-        val bitmap = patternedBitmap(width = 3_200, height = 2_400)
+        // 仍同时超过 1600px 长边和 1,500,000 像素阈值，但显著降低测试成本。
+        val bitmap = patternedBitmap(width = 1_800, height = 1_200)
         FileOutputStream(sourceFile).use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
         }
@@ -151,7 +153,7 @@ class AgentImageCodecTest {
     fun chatPreviewIsIndependentFromTheOriginalFile() {
         val context = RuntimeEnvironment.getApplication()
         val sourceFile = File(context.cacheDir, "image-preview-${System.nanoTime()}.jpg")
-        val bitmap = patternedBitmap(width = 1_200, height = 800)
+        val bitmap = patternedBitmap(width = 800, height = 600)
         FileOutputStream(sourceFile).use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
         }
@@ -179,7 +181,7 @@ class AgentImageCodecTest {
     fun pickedAttachmentPreviewDoesNotReopenThePickerUri() {
         val context = RuntimeEnvironment.getApplication()
         val sourceFile = File(context.cacheDir, "picked-image-${System.nanoTime()}.jpg")
-        val bitmap = patternedBitmap(width = 1_200, height = 800)
+        val bitmap = patternedBitmap(width = 800, height = 600)
         FileOutputStream(sourceFile).use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
         }
@@ -203,7 +205,7 @@ class AgentImageCodecTest {
     fun pickerUriFallsBackToTypedAssetStream() {
         val context = RuntimeEnvironment.getApplication()
         val sourceFile = File(context.cacheDir, "typed-picker-${System.nanoTime()}.jpg")
-        val bitmap = patternedBitmap(width = 873, height = 1_920)
+        val bitmap = patternedBitmap(width = 600, height = 1_200)
         FileOutputStream(sourceFile).use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
         }
@@ -225,8 +227,8 @@ class AgentImageCodecTest {
             ) ?: error("无法通过 typed asset 读取测试图片")
 
             assertEquals("image/jpeg", image.mimeType)
-            assertEquals(873, image.width)
-            assertEquals(1_920, image.height)
+            assertEquals(600, image.width)
+            assertEquals(1_200, image.height)
         } finally {
             sourceFile.delete()
         }

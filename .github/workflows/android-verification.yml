@@ -1,0 +1,207 @@
+name: Nova Verification
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nova-verification-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: 单元测试 · ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: model
+            label: 模型协议与循环
+            patterns: |
+              fuck.andes.agent.model.*
+          - id: runtime-core
+            label: 运行时核心
+            patterns: |
+              fuck.andes.agent.memory.*
+              fuck.andes.agent.overlay.*
+              fuck.andes.agent.runtime.*
+          - id: media
+            label: 图片编解码
+            patterns: |
+              fuck.andes.agent.media.*
+          - id: browser
+            label: 浏览器协议
+            patterns: |
+              fuck.andes.agent.browser.*
+          - id: ui-persistence
+            label: UI Room 持久化
+            patterns: |
+              fuck.andes.ui.app.AgentConversationStoreTest
+          - id: ui-state
+            label: UI 状态与恢复
+            patterns: |
+              fuck.andes.ui.app.AgentPendingResultRecoveryTest
+              fuck.andes.ui.app.AgentRunEventCoalescerTest
+              fuck.andes.ui.app.AgentRunMessageProjectorTest
+              fuck.andes.ui.app.AgentRuntimeHistoryReducerTest
+              fuck.andes.ui.app.ConversationTimeLabelsTest
+              fuck.andes.ui.app.SkillZipImportGatewayTest
+          - id: ui-policy
+            label: UI 策略与格式化
+            patterns: |
+              fuck.andes.ui.components.*
+              fuck.andes.ui.markdown.*
+              fuck.andes.ui.model.*
+              fuck.andes.ui.pages.*
+          - id: data-skills
+            label: 数据、Skills 与工具
+            patterns: |
+              fuck.andes.agent.skill.*
+              fuck.andes.agent.tool.*
+              fuck.andes.config.*
+              fuck.andes.core.*
+              fuck.andes.data.*
+          - id: platform
+            label: Android 平台集成
+            patterns: |
+              fuck.andes.agent.accessibility.*
+              fuck.andes.agent.device.*
+              fuck.andes.hook.*
+              fuck.andes.systemizer.*
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: 配置 JDK 25
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92
+        with:
+          cache-provider: basic
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+
+      - name: 安装 Android SDK 37
+        run: sdkmanager --channel=3 "platforms;android-37.0"
+
+      - name: 执行测试分片
+        timeout-minutes: 20
+        env:
+          TEST_PATTERNS: ${{ matrix.patterns }}
+        run: |
+          args=()
+          while IFS= read -r pattern; do
+            [[ -z "$pattern" ]] || args+=(--tests "$pattern")
+          done <<< "$TEST_PATTERNS"
+          ./gradlew --no-daemon --stacktrace --no-configuration-cache \
+            :app:testDebugUnitTest "${args[@]}"
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nova-unit-${{ matrix.id }}-${{ github.sha }}
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  terminal-tests:
+    name: 终端与进程测试
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: 配置 JDK 25
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92
+        with:
+          cache-provider: basic
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+
+      - name: 安装 Android SDK 37
+        run: sdkmanager --channel=3 "platforms;android-37.0"
+
+      - name: 执行终端与进程测试
+        timeout-minutes: 10
+        run: >-
+          ./gradlew --no-daemon --stacktrace --no-configuration-cache
+          :app:testDebugUnitTest
+          --tests 'fuck.andes.agent.terminal.*'
+
+      - name: 上传终端测试报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nova-terminal-tests-${{ github.sha }}
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  lint:
+    name: Android Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: 配置 JDK 25
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92
+        with:
+          cache-provider: basic
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+
+      - name: 安装 Android SDK 37
+        run: sdkmanager --channel=3 "platforms;android-37.0"
+
+      - name: 执行 Android Lint
+        timeout-minutes: 30
+        run: >-
+          ./gradlew --no-daemon --stacktrace --no-configuration-cache
+          :app:lintDebug
+
+      - name: 上传 Lint 报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nova-lint-${{ github.sha }}
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: ignore
+          retention-days: 14

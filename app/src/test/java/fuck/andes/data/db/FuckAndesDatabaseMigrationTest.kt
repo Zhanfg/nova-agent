@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class FuckAndesDatabaseMigrationTest {
     @Test
-    fun migration6To10PreservesDataAndMigratesReasoningEffort() {
+    fun migration6To11PreservesDataAndMigratesReasoningEffort() {
         val context = RuntimeEnvironment.getApplication() as Context
         val databaseName = "migration-${UUID.randomUUID()}.db"
         createVersion6Database(context, databaseName)
@@ -31,6 +31,7 @@ class FuckAndesDatabaseMigrationTest {
                 FuckAndesDatabase.MIGRATION_7_8,
                 FuckAndesDatabase.MIGRATION_8_9,
                 FuckAndesDatabase.MIGRATION_9_10,
+                FuckAndesDatabase.MIGRATION_10_11,
             )
             .build()
         try {
@@ -64,6 +65,7 @@ class FuckAndesDatabaseMigrationTest {
                 listOf(ModelSource.CATALOG, ModelSource.MANUAL),
                 provider.models.map { it.source },
             )
+            assertEquals(listOf(null, null), provider.models.map { it.visionVerified })
         } finally {
             database.close()
             context.deleteDatabase(databaseName)
