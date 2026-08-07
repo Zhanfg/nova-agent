@@ -88,6 +88,29 @@ class AgentSerialIngestQueueTest {
     }
 
     @Test
+    fun cancelledActiveWorkerCannotCompletePromotedRequest() {
+        val queue = AgentSerialIngestQueue<Request>(maxWaiting = 2)
+        val cancelled = Request("cancelled")
+        val promoted = Request("promoted")
+        val last = Request("last")
+        queue.submit(cancelled)
+        queue.submit(promoted)
+        queue.submit(last)
+
+        assertEquals(
+            RemoveResult.RemovedActive(item = cancelled, next = promoted),
+            queue.removeFirst { it.runId == "cancelled" },
+        )
+
+        // The cancelled background worker may still post a completion callback. Identity checking
+        // must make that callback a no-op instead of advancing the newly promoted request.
+        assertNull(queue.complete(cancelled))
+        assertEquals(promoted, queue.active())
+        assertEquals(last, queue.complete(promoted))
+        assertNull(queue.complete(last))
+    }
+
+    @Test
     fun staleWorkerCannotAdvanceQueue() {
         val queue = AgentSerialIngestQueue<Request>(maxWaiting = 2)
         val active = Request("active")
