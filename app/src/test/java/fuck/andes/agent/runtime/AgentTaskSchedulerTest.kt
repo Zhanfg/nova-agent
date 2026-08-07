@@ -50,6 +50,29 @@ class AgentTaskSchedulerTest {
     }
 
     @Test
+    fun independentBrowserAndTerminalSessionsRunConcurrently() {
+        val scheduler = AgentTaskScheduler()
+
+        assertEquals(
+            SubmitResult.Started,
+            scheduler.submit(TaskSpec("browser-a", setOf(Resource.BrowserSession("browser-a")))),
+        )
+        assertEquals(
+            SubmitResult.Started,
+            scheduler.submit(TaskSpec("browser-b", setOf(Resource.BrowserSession("browser-b")))),
+        )
+        assertEquals(
+            SubmitResult.Started,
+            scheduler.submit(TaskSpec("terminal-a", setOf(Resource.TerminalSession("terminal-a")))),
+        )
+
+        assertEquals(
+            setOf("browser-a", "browser-b", "terminal-a"),
+            scheduler.runningTasks().map { it.runId }.toSet(),
+        )
+    }
+
+    @Test
     fun sameWorkspacePreservesFifoButIndependentTaskCanBypassBlockedLane() {
         val scheduler = AgentTaskScheduler()
         scheduler.submit(TaskSpec("writer-1", setOf(Resource.WorkspaceWrite("shared"))))
