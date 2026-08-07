@@ -69,7 +69,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
     private var startRequestGeneration = 0L
-    private var pendingStartRequest: PendingStartRequest? = null
+    private val pendingStartRequests = AgentSerialIngestQueue<PendingStartRequest>(
+        maxWaiting = 5,
+    )
 
     private data class PendingStartRequest(
         val generation: Long,
@@ -136,7 +138,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onDestroy() {
         startRequestGeneration++
-        pendingStartRequest?.let { pending ->
+        pendingStartRequests.drain().forEach { pending ->
             pending.incoming.close()
             sendRequestIngestedTo(pending.replyTo, pending.incoming.request.runId)
             sendResultTo(
@@ -149,7 +151,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 ),
             )
         }
-        pendingStartRequest = null
         activeSession?.cancel("Agent Runtime 服务已停止")
         activeSession = null
         mainHandler.removeCallbacksAndMessages(null)
@@ -239,29 +240,55 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         incoming: AgentRuntimeWire.IncomingRunRequest,
         replyTo: Messenger?,
     ) {
-        val generation = ++startRequestGeneration
-        pendingStartRequest?.let { previous ->
-            previous.incoming.close()
-            sendRequestIngestedTo(previous.replyTo, previous.incoming.request.runId)
-            sendResultTo(
-                previous.replyTo,
-                AgentRuntimeWire.RunResult(
-                    runId = previous.incoming.request.runId,
-                    ok = false,
-                    content = "",
-                    error = "已被新的 Agent 任务替换",
-                ),
-            )
+        val pending = PendingStartRequest(
+            generation = startRequestGeneration,
+            incoming = incoming,
+            replyTo = replyTo,
+        )
+        when (val submit = pendingStartRequests.submit(pending)) {
+            AgentSerialIngestQueue.SubmitResult.StartNow -> {
+                materializePendingStartRequest(pending)
+            }
+
+            is AgentSerialIngestQueue.SubmitResult.Queued -> {
+                AndroidAgentLogger.info(
+                    "Agent request queued for image ingest: runId=${incoming.request.runId}, " +
+                        "position=${submit.position}"
+                )
+            }
+
+            AgentSerialIngestQueue.SubmitResult.RejectedFull -> {
+                incoming.close()
+                sendRequestIngestedTo(replyTo, incoming.request.runId)
+                sendResultTo(
+                    replyTo,
+                    AgentRuntimeWire.RunResult(
+                        runId = incoming.request.runId,
+                        ok = false,
+                        content = "",
+                        error = "Agent Runtime 请求入口队列已满",
+                    ),
+                )
+            }
         }
-        val pending = PendingStartRequest(generation, incoming, replyTo)
-        pendingStartRequest = pending
+    }
+
+    private fun materializePendingStartRequest(pending: PendingStartRequest) {
+        val incoming = pending.incoming
+        val replyTo = pending.replyTo
         thread(name = "agent-runtime-image-ingest") {
             val materialized = runCatching {
                 AgentRuntimeImageTransfer.materialize(incoming)
             }
             mainHandler.post {
-                if (generation != startRequestGeneration || pendingStartRequest !== pending) return@post
-                pendingStartRequest = null
+                if (
+                    pending.generation != startRequestGeneration ||
+                    pendingStartRequests.active() !== pending
+                ) {
+                    return@post
+                }
+
+                val next = pendingStartRequests.complete(pending)
                 sendRequestIngestedTo(replyTo, incoming.request.runId)
                 materialized.fold(
                     onSuccess = { request ->
@@ -281,14 +308,35 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         AndroidAgentLogger.warnThrottled("runtime_image_ingest_failed") {
                             "Agent runtime image ingest failed: type=${throwable.safeLogType()}"
                         }
-                        finishWithFailure(
+                        val message =
                             (throwable as? AgentRuntimeImageTransfer.ImageTransferException)
                                 ?.message
-                                ?: "Agent Runtime 无法读取图片",
+                                ?: "Agent Runtime 无法读取图片"
+                        sendResultTo(
                             replyTo,
+                            AgentRuntimeWire.RunResult(
+                                runId = incoming.request.runId,
+                                ok = false,
+                                content = "",
+                                error = message,
+                            ),
                         )
+                        if (
+                            next == null &&
+                            activeSession == null &&
+                            runQueue.isEmpty()
+                        ) {
+                            enterFinalState(
+                                AgentOverlayState(
+                                    phase = AgentOverlayPhase.FAILED,
+                                    statusText = "调用失败",
+                                    detailText = message,
+                                )
+                            )
+                        }
                     },
                 )
+                next?.let(::materializePendingStartRequest)
             }
         }
     }
@@ -629,21 +677,43 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun cancelRun(runId: String) {
         if (runId.isBlank()) return
-        pendingStartRequest?.takeIf { pending -> pending.incoming.request.runId == runId }?.let { pending ->
-            startRequestGeneration++
-            pendingStartRequest = null
-            pending.incoming.close()
-            sendRequestIngestedTo(pending.replyTo, runId)
-            sendResultTo(
-                pending.replyTo,
-                AgentRuntimeWire.RunResult(
-                    runId = runId,
-                    ok = false,
-                    content = "",
-                    error = "已停止",
-                ),
-            )
-            return
+        when (
+            val removed = pendingStartRequests.removeFirst {
+                it.incoming.request.runId == runId
+            }
+        ) {
+            is AgentSerialIngestQueue.RemoveResult.RemovedActive -> {
+                removed.item.incoming.close()
+                sendRequestIngestedTo(removed.item.replyTo, runId)
+                sendResultTo(
+                    removed.item.replyTo,
+                    AgentRuntimeWire.RunResult(
+                        runId = runId,
+                        ok = false,
+                        content = "",
+                        error = "已停止",
+                    ),
+                )
+                removed.next?.let(::materializePendingStartRequest)
+                return
+            }
+
+            is AgentSerialIngestQueue.RemoveResult.RemovedWaiting -> {
+                removed.item.incoming.close()
+                sendRequestIngestedTo(removed.item.replyTo, runId)
+                sendResultTo(
+                    removed.item.replyTo,
+                    AgentRuntimeWire.RunResult(
+                        runId = runId,
+                        ok = false,
+                        content = "",
+                        error = "已停止",
+                    ),
+                )
+                return
+            }
+
+            AgentSerialIngestQueue.RemoveResult.NotFound -> Unit
         }
         val queued = AgentRunQueuePolicy.removeQueuedByRunId(
             queue = runQueue,
