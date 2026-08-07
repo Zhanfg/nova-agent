@@ -35,11 +35,14 @@ jobs:
               fuck.andes.agent.memory.*
               fuck.andes.agent.overlay.*
               fuck.andes.agent.runtime.*
+          - id: media
+            label: 图片编解码
+            patterns: |
+              fuck.andes.agent.media.*
           - id: presentation
-            label: 浏览器、媒体与界面
+            label: 浏览器与界面
             patterns: |
               fuck.andes.agent.browser.*
-              fuck.andes.agent.media.*
               fuck.andes.ui.*
           - id: data-skills
             label: 数据、Skills 与工具
