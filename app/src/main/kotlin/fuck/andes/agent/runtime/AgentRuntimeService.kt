@@ -121,7 +121,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_KEEP_ALIVE || activeSession == null) {
+        if (intent?.action != ACTION_KEEP_ALIVE || !hasRuntimeWork()) {
             stopSelf(startId)
         }
         return START_NOT_STICKY
@@ -656,14 +656,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             replyTo,
             AgentRuntimeWire.RunResult(runId = "", ok = false, content = "", error = message),
         )
-        if (
-            activeSession != null ||
-            pendingStartRequests.active() != null ||
-            pendingStartRequests.waitingCount() > 0 ||
-            runQueue.isNotEmpty()
-        ) {
-            return
-        }
+        if (hasRuntimeWork()) return
         enterFinalState(
             AgentOverlayState(
                 phase = AgentOverlayPhase.FAILED,
@@ -674,13 +667,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun requestStop() {
-        val session = activeSession
-        if (session == null) {
+        val runId = activeSession?.runId
+            ?: pendingStartRequests.active()?.incoming?.request?.runId
+            ?: runQueue.firstOrNull()?.request?.runId
+        if (runId == null) {
             dismissAndStop()
             return
         }
-        cancelRun(session.runId)
+        cancelRun(runId)
     }
+
+    private fun hasRuntimeWork(): Boolean =
+        activeSession != null ||
+            pendingStartRequests.active() != null ||
+            pendingStartRequests.waitingCount() > 0 ||
+            runQueue.isNotEmpty()
 
     private fun cancelRun(runId: String) {
         if (runId.isBlank()) return
