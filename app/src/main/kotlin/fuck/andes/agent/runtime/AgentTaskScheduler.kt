@@ -40,7 +40,12 @@ internal class AgentTaskScheduler {
             return SubmitResult.DuplicateRunId
         }
 
-        if (canStartNow(task, earlierBlockedResources = emptySet())) {
+        // Older waiters reserve every resource they need. A newer task may bypass an older blocked
+        // task only when the two tasks are completely resource-independent.
+        val earlierQueuedResources = waiting
+            .flatMapTo(linkedSetOf()) { it.resources }
+
+        if (canStartNow(task, earlierBlockedResources = earlierQueuedResources)) {
             running[task.runId] = task
             return SubmitResult.Started
         }
