@@ -20,7 +20,7 @@ jobs:
   verify:
     name: 测试、Lint 与 Debug APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: 检出代码
@@ -46,10 +46,23 @@ jobs:
       - name: 安装 Android SDK 37
         run: sdkmanager --channel=3 "platforms;android-37.0"
 
-      - name: 执行单元测试、Lint 与 Debug 构建
+      - name: 构建 Debug APK
+        timeout-minutes: 20
         run: >-
           ./gradlew --no-daemon --stacktrace --no-configuration-cache
-          :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+          :app:assembleDebug
+
+      - name: 执行 Debug 单元测试
+        timeout-minutes: 20
+        run: >-
+          ./gradlew --no-daemon --stacktrace --no-configuration-cache
+          :app:testDebugUnitTest
+
+      - name: 执行 Android Lint
+        timeout-minutes: 15
+        run: >-
+          ./gradlew --no-daemon --stacktrace --no-configuration-cache
+          :app:lintDebug
 
       - name: 验证 Debug APK
         id: apk
