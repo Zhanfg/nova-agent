@@ -1,10 +1,20 @@
 # Nova 发布流程
 
-Nova 将普通持续集成与正式签名发布分为两套工作流，避免没有发布证书时阻断测试和 Debug 构建。
+Nova 将普通构建、代码验证和正式签名发布拆成三套工作流，避免没有发布证书时阻断 Debug 构建与测试。
 
-## 普通持续集成
+## Debug 构建
 
-`Nova CI` 会在以下情况运行：
+`Nova Android Build` 会在以下情况运行：
+
+- 向 `main` 推送提交
+- 创建或更新 Pull Request
+- 在 Actions 页面手动运行
+
+该工作流只执行 `:app:assembleDebug`，并上传 `nova-debug-apk` Artifact，保留 14 天。它不读取发布证书，也不会生成可正式分发的 Release APK。
+
+## 单元测试与 Lint
+
+`Nova Verification` 会在以下情况运行：
 
 - 向 `main` 推送提交
 - 创建或更新面向 `main` 的 Pull Request
@@ -12,12 +22,9 @@ Nova 将普通持续集成与正式签名发布分为两套工作流，避免没
 
 该工作流执行：
 
-1. Debug 单元测试
-2. Android Lint
-3. Debug APK 构建
-4. 上传 `nova-debug-<commit SHA>` Artifact，保留 14 天
-
-普通 CI 不读取发布证书，也不会生成可正式分发的签名 Release APK。
+1. `:app:testDebugUnitTest`
+2. `:app:lintDebug`
+3. 无论成功或失败都尽量上传测试与 Lint 报告，保留 14 天
 
 ## 配置签名 Secrets
 
@@ -37,10 +44,10 @@ base64 < /path/to/Nova-release.jks | tr -d '\n' | pbcopy
 也可以使用 GitHub CLI。密码类 Secret 不要直接写在命令参数中，运行命令后按提示输入：
 
 ```bash
-base64 < /path/to/Nova-release.jks | gh secret set --env release NOVA_RELEASE_KEYSTORE_BASE64
-gh secret set --env release NOVA_RELEASE_STORE_PASSWORD
-gh secret set --env release NOVA_RELEASE_KEY_ALIAS
-gh secret set --env release NOVA_RELEASE_KEY_PASSWORD
+base64 < /path/to/Nova-release.jks | gh secret set NOVA_RELEASE_KEYSTORE_BASE64 --env release
+gh secret set NOVA_RELEASE_STORE_PASSWORD --env release
+gh secret set NOVA_RELEASE_KEY_ALIAS --env release
+gh secret set NOVA_RELEASE_KEY_PASSWORD --env release
 ```
 
 Gradle 优先读取 `NOVA_RELEASE_*` 环境变量，同时临时兼容旧的 `ETA_RELEASE_*` 本地变量。GitHub Actions 的正式发布工作流只使用新的 `NOVA_RELEASE_*` Secrets。
