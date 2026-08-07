@@ -1,0 +1,40 @@
+name: One-shot runtime idle failure guard
+
+on:
+  push:
+    branches:
+      - fix/ci-baseline-and-nova-branding
+    paths:
+      - .github/workflows/one-shot-runtime-idle-guard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/ci-baseline-and-nova-branding
+          fetch-depth: 0
+
+      - name: Patch idle failure guard
+        shell: bash
+        run: |
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpwYXRoID0gUGF0aCgiYXBwL3NyYy9tYWluL2tvdGxpbi9mdWNrL2FuZGVzL2FnZW50L3J1bnRpbWUvQWdlbnRSdW50aW1lU2VydmljZS5rdCIpCnRleHQgPSBwYXRoLnJlYWRfdGV4dCgpCm9sZCA9ICIiIiAgICAgICAgaWYgKGFjdGl2ZVNlc3Npb24gIT0gbnVsbCkgcmV0dXJuCiAgICAgICAgZW50ZXJGaW5hbFN0YXRlKAoiIiIKbmV3ID0gIiIiICAgICAgICBpZiAoCiAgICAgICAgICAgIGFjdGl2ZVNlc3Npb24gIT0gbnVsbCB8fAogICAgICAgICAgICBwZW5kaW5nU3RhcnRSZXF1ZXN0cy5hY3RpdmUoKSAhPSBudWxsIHx8CiAgICAgICAgICAgIHBlbmRpbmdTdGFydFJlcXVlc3RzLndhaXRpbmdDb3VudCgpID4gMCB8fAogICAgICAgICAgICBydW5RdWV1ZS5pc05vdEVtcHR5KCkKICAgICAgICApIHsKICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgfQogICAgICAgIGVudGVyRmluYWxTdGF0ZSgKIiIiCmlmIG9sZCBub3QgaW4gdGV4dDoKICAgIHJhaXNlIFN5c3RlbUV4aXQoImZpbmlzaFdpdGhGYWlsdXJlIGFuY2hvciBub3QgZm91bmQiKQpwYXRoLndyaXRlX3RleHQodGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKSkK' | base64 -d > /tmp/patch_runtime_idle_guard.py
+          python3 /tmp/patch_runtime_idle_guard.py
+          git diff --check
+          git diff -- app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt
+
+      - name: Commit guard and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-runtime-idle-guard.yml
+          git add app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt
+          git commit -m 'fix: keep runtime alive while valid work is pending'
+          git push origin HEAD:fix/ci-baseline-and-nova-branding
