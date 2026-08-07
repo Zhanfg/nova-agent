@@ -47,10 +47,12 @@ internal class AgentWorkspaceTools(
         val result = manager.inspect(args.getString("path"))
         val workspace = result.workspace ?: return error("WORKSPACE_INSPECT_FAILED", result.error ?: "检查失败")
         workspaces[workspace.workspaceId] = workspace
-        return workspaceJson(workspace)
-            .put("ok", true)
-            .put("warning", result.error ?: JSONObject.NULL)
-            .toString()
+        return attachProjectInstructions(
+            workspaceJson(workspace)
+                .put("ok", true)
+                .put("warning", result.error ?: JSONObject.NULL),
+            workspace,
+        ).toString()
     }
 
     private fun createWorktree(args: JSONObject): String {
@@ -64,7 +66,10 @@ internal class AgentWorkspaceTools(
         val workspace = result.workspace
             ?: return error("WORKTREE_CREATE_FAILED", result.error ?: "创建 worktree 失败")
         workspaces[workspace.workspaceId] = workspace
-        return workspaceJson(workspace).put("ok", true).toString()
+        return attachProjectInstructions(
+            workspaceJson(workspace).put("ok", true),
+            workspace,
+        ).toString()
     }
 
     private fun removeWorktree(args: JSONObject): String {
@@ -162,6 +167,22 @@ internal class AgentWorkspaceTools(
                 }
             })
             .toString()
+    }
+
+    /** Opening a Codex workspace must surface its instructions without relying on a second model tool call. */
+    private fun attachProjectInstructions(
+        target: JSONObject,
+        workspace: AgentWorkspace,
+    ): JSONObject {
+        val repositoryRoot = workspace.repositoryRoot ?: return target
+        val result = AgentProjectInstructions.load(repositoryRoot, workspace.effectivePath)
+        if (result.error != null) {
+            return target.put("project_instructions_error", result.error)
+        }
+        return target
+            .put("project_instructions", result.renderForModel())
+            .put("project_instructions_truncated", result.truncated)
+            .put("project_instruction_layers", result.layers.size)
     }
 
     private inline fun mutatePaths(
