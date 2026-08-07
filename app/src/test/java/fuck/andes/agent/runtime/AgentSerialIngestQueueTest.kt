@@ -1,5 +1,6 @@
 package fuck.andes.agent.runtime
 
+import fuck.andes.agent.runtime.AgentSerialIngestQueue.RemoveResult
 import fuck.andes.agent.runtime.AgentSerialIngestQueue.SubmitResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -44,6 +45,46 @@ class AgentSerialIngestQueueTest {
         assertEquals(second, queue.complete(first))
         assertEquals(third, queue.complete(second))
         assertNull(queue.complete(third))
+    }
+
+    @Test
+    fun removingWaitingRequestLeavesOtherRequestsInOrder() {
+        val queue = AgentSerialIngestQueue<Request>(maxWaiting = 3)
+        val active = Request("active")
+        val keepFirst = Request("keep-first")
+        val cancel = Request("cancel")
+        val keepLast = Request("keep-last")
+        queue.submit(active)
+        queue.submit(keepFirst)
+        queue.submit(cancel)
+        queue.submit(keepLast)
+
+        assertEquals(
+            RemoveResult.RemovedWaiting(cancel),
+            queue.removeFirst { it.runId == "cancel" },
+        )
+        assertEquals(keepFirst, queue.complete(active))
+        assertEquals(keepLast, queue.complete(keepFirst))
+        assertNull(queue.complete(keepLast))
+    }
+
+    @Test
+    fun removingActiveRequestPromotesNextWithoutInvalidatingRemainingQueue() {
+        val queue = AgentSerialIngestQueue<Request>(maxWaiting = 2)
+        val active = Request("active")
+        val next = Request("next")
+        val last = Request("last")
+        queue.submit(active)
+        queue.submit(next)
+        queue.submit(last)
+
+        assertEquals(
+            RemoveResult.RemovedActive(item = active, next = next),
+            queue.removeFirst { it.runId == "active" },
+        )
+        assertEquals(next, queue.active())
+        assertEquals(last, queue.complete(next))
+        assertNull(queue.complete(last))
     }
 
     @Test
