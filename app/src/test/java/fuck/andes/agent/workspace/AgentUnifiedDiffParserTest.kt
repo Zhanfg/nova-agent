@@ -84,6 +84,48 @@ class AgentUnifiedDiffParserTest {
     }
 
     @Test
+    fun preservesNestedPathWhoseFirstRealDirectoryIsB() {
+        val diff = """
+            diff --git a/a/b/file.kt b/a/b/file.kt
+            --- a/a/b/file.kt
+            +++ b/a/b/file.kt
+            @@ -1 +1 @@
+            -old
+            +new
+        """.trimIndent()
+
+        val change = AgentUnifiedDiffParser.parse(diff).files.single()
+
+        assertEquals("a/b/file.kt", change.oldPath)
+        assertEquals("a/b/file.kt", change.newPath)
+    }
+
+    @Test
+    fun parsesQuotedSpaceAndUnicodePathsWithoutCorruption() {
+        val diff = """
+            diff --git "a/docs/foo bar.md" "b/docs/foo bar.md"
+            --- "a/docs/foo bar.md"
+            +++ "b/docs/foo bar.md"
+            @@ -1 +1 @@
+            -old
+            +new
+            diff --git a/文档/说明.md b/文档/说明.md
+            --- a/文档/说明.md
+            +++ b/文档/说明.md
+            @@ -1 +1 @@
+            -旧
+            +新
+        """.trimIndent()
+
+        val files = AgentUnifiedDiffParser.parse(diff).files
+
+        assertEquals("docs/foo bar.md", files[0].oldPath)
+        assertEquals("docs/foo bar.md", files[0].newPath)
+        assertEquals("文档/说明.md", files[1].oldPath)
+        assertEquals("文档/说明.md", files[1].newPath)
+    }
+
+    @Test
     fun emptyDiffProducesEmptyReview() {
         assertTrue(AgentUnifiedDiffParser.parse("").files.isEmpty())
     }
