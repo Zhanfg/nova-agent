@@ -238,6 +238,12 @@ class AgentConversationStoreTest {
                 context = context,
                 scope = scope,
                 startBackgroundWork = false,
+                initialConversationSnapshot = AgentConversationStore.Snapshot(
+                    selectedConversationId = null,
+                    conversationsById = emptyMap(),
+                    titles = emptyMap(),
+                    updatedAt = emptyMap(),
+                ),
             )
 
             state.createConversation()

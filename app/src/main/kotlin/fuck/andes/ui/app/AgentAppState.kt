@@ -78,6 +78,7 @@ internal class AgentAppState(
     private val scope: CoroutineScope,
     skillZipImportGateway: SkillZipImportGateway? = null,
     startBackgroundWork: Boolean = true,
+    initialConversationSnapshot: AgentConversationStore.Snapshot? = null,
 ) {
     private val appContext = context.applicationContext
     private val skillZipImportGateway = skillZipImportGateway ?: CoreSkillZipImportGateway(appContext)
@@ -91,7 +92,8 @@ internal class AgentAppState(
     private var persistenceJob: Job? = null
     private val runtimeRecoveryInProgress = AtomicBoolean(false)
     private val defaultThinkingEnabled = agentBooleanForUi(Prefs.Keys.AGENT_THINKING_ENABLED)
-    private val initialConversations = AgentConversationStore.load(appContext)
+    private val initialConversations = initialConversationSnapshot
+        ?: AgentConversationStore.load(appContext)
     private var skillNoticeSequence = 0L
     private var pendingSkillZipUri: Uri? = null
     private var pendingSkillZipSha256: String? = null
