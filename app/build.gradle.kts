@@ -5,15 +5,33 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val releaseStoreFile = System.getenv("ETA_RELEASE_STORE_FILE")
-val releaseStorePassword = System.getenv("ETA_RELEASE_STORE_PASSWORD")
-val releaseKeyAlias = System.getenv("ETA_RELEASE_KEY_ALIAS")
-val releaseKeyPassword = System.getenv("ETA_RELEASE_KEY_PASSWORD")
+fun releaseEnvironmentValue(primaryName: String, legacyName: String): String? =
+    sequenceOf(primaryName, legacyName)
+        .mapNotNull(System::getenv)
+        .map(String::trim)
+        .firstOrNull(String::isNotEmpty)
+
+val releaseStoreFile = releaseEnvironmentValue(
+    primaryName = "NOVA_RELEASE_STORE_FILE",
+    legacyName = "ETA_RELEASE_STORE_FILE",
+)
+val releaseStorePassword = releaseEnvironmentValue(
+    primaryName = "NOVA_RELEASE_STORE_PASSWORD",
+    legacyName = "ETA_RELEASE_STORE_PASSWORD",
+)
+val releaseKeyAlias = releaseEnvironmentValue(
+    primaryName = "NOVA_RELEASE_KEY_ALIAS",
+    legacyName = "ETA_RELEASE_KEY_ALIAS",
+)
+val releaseKeyPassword = releaseEnvironmentValue(
+    primaryName = "NOVA_RELEASE_KEY_PASSWORD",
+    legacyName = "ETA_RELEASE_KEY_PASSWORD",
+)
 val hasReleaseSigning = listOf(
     releaseStoreFile,
     releaseStorePassword,
     releaseKeyAlias,
-    releaseKeyPassword
+    releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
 
 java {
