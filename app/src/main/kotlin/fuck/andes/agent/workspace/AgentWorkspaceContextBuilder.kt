@@ -24,7 +24,10 @@ internal object AgentWorkspaceContextBuilder {
         workspace: AgentWorkspace,
         config: AgentModelClient.ModelConfig,
     ): AgentModelClient.ModelConfig {
-        val instructionRoot = workspace.repositoryRoot ?: workspace.rootPath
+        // repositoryRoot records Git provenance and may point at the source checkout. For an
+        // isolated worktree the actual project file tree lives elsewhere, so AGENTS.md hierarchy
+        // must be resolved from effectivePath rather than from the source checkout.
+        val instructionRoot = workspace.effectivePath
         val instructions = AgentProjectInstructions.load(
             repositoryRoot = instructionRoot,
             workingDirectory = workspace.effectivePath,
