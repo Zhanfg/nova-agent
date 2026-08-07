@@ -50,7 +50,12 @@ internal class AgentWorkspaceTools(
             ?: return error("WORKSPACE_PATH_UNAVAILABLE", validation.error ?: "workspace 路径不可用")
         val result = manager.inspect(path)
         val workspace = result.workspace ?: return error("WORKSPACE_INSPECT_FAILED", result.error ?: "检查失败")
-        workspaceRegistry.register(workspace)
+        runCatching { workspaceRegistry.register(workspace) }.getOrElse { failure ->
+            return error(
+                "WORKSPACE_REGISTRY_PERSIST_FAILED",
+                failure.message ?: "无法持久化 workspace identity",
+            )
+        }
         return attachProjectInstructions(
             workspaceJson(workspace)
                 .put("ok", true)
@@ -69,7 +74,19 @@ internal class AgentWorkspaceTools(
         )
         val workspace = result.workspace
             ?: return error("WORKTREE_CREATE_FAILED", result.error ?: "创建 worktree 失败")
-        workspaceRegistry.register(workspace)
+        runCatching { workspaceRegistry.register(workspace) }.getOrElse { failure ->
+            val cleanupFailure = manager.removeIsolatedWorktree(workspace, force = true)
+            return error(
+                "WORKSPACE_REGISTRY_PERSIST_FAILED",
+                buildString {
+                    append(failure.message ?: "worktree 已创建但 workspace identity 无法持久化")
+                    if (cleanupFailure != null) {
+                        append("；回滚 worktree 也失败：")
+                        append(cleanupFailure)
+                    }
+                },
+            )
+        }
         return attachProjectInstructions(
             workspaceJson(workspace).put("ok", true),
             workspace,
@@ -83,7 +100,12 @@ internal class AgentWorkspaceTools(
             force = args.optBoolean("force", false),
         )
         if (failure != null) return error("WORKTREE_REMOVE_FAILED", failure)
-        workspaceRegistry.remove(workspace.workspaceId)
+        runCatching { workspaceRegistry.remove(workspace.workspaceId) }.getOrElse { persistFailure ->
+            return error(
+                "WORKSPACE_REGISTRY_PERSIST_FAILED",
+                "worktree 已删除，但 registry 清理未持久化：${persistFailure.message ?: persistFailure.javaClass.simpleName}",
+            )
+        }
         return JSONObject()
             .put("ok", true)
             .put("workspace_id", workspace.workspaceId)
@@ -149,12 +171,11 @@ internal class AgentWorkspaceTools(
 
     private fun projectInstructions(args: JSONObject): String {
         val workspace = workspace(args) ?: return missingWorkspace(args)
-        val repositoryRoot = workspace.repositoryRoot
-            ?: return error("NOT_GIT_WORKSPACE", "AGENTS.md 层级加载需要 Git repository root")
+        val instructionRoot = workspace.effectivePath
         val workingDirectory = args.optString("working_directory")
             .takeIf(String::isNotBlank)
-            ?: workspace.effectivePath
-        val result = AgentProjectInstructions.load(repositoryRoot, workingDirectory)
+            ?: instructionRoot
+        val result = AgentProjectInstructions.load(instructionRoot, workingDirectory)
         result.error?.let { return error("PROJECT_INSTRUCTIONS_FAILED", it) }
         return JSONObject()
             .put("ok", true)
@@ -173,13 +194,13 @@ internal class AgentWorkspaceTools(
             .toString()
     }
 
-    /** Opening a Codex workspace must surface its instructions without relying on a second model tool call. */
+    /** Opening a Codex workspace must surface instructions from the active worktree file tree. */
     private fun attachProjectInstructions(
         target: JSONObject,
         workspace: AgentWorkspace,
     ): JSONObject {
-        val repositoryRoot = workspace.repositoryRoot ?: return target
-        val result = AgentProjectInstructions.load(repositoryRoot, workspace.effectivePath)
+        val instructionRoot = workspace.effectivePath
+        val result = AgentProjectInstructions.load(instructionRoot, instructionRoot)
         if (result.error != null) {
             return target.put("project_instructions_error", result.error)
         }
