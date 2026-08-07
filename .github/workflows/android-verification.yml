@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nova-verification-v2-${{ github.ref }}
+  group: nova-verification-v3-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,14 +29,17 @@ jobs:
             label: 模型协议与循环
             patterns: |
               fuck.andes.agent.model.*
-          - id: runtime-ui
-            label: 运行时与界面
+          - id: runtime-core
+            label: 运行时核心
             patterns: |
-              fuck.andes.agent.browser.*
-              fuck.andes.agent.media.*
               fuck.andes.agent.memory.*
               fuck.andes.agent.overlay.*
               fuck.andes.agent.runtime.*
+          - id: presentation
+            label: 浏览器、媒体与界面
+            patterns: |
+              fuck.andes.agent.browser.*
+              fuck.andes.agent.media.*
               fuck.andes.ui.*
           - id: data-skills
             label: 数据、Skills 与工具
