@@ -294,7 +294,7 @@ class AgentModelClientLoopTest {
         )
 
         val result = AgentModelClient.complete(
-            config = modelConfig(),
+            config = modelConfig().copy(modelSupportsVision = true),
             prompt = "观察后点击",
             toolExecutor = AgentModelClient.ToolExecutor { call ->
                 AgentModelClient.ToolResult(
@@ -340,7 +340,7 @@ class AgentModelClientLoopTest {
         var observationIndex = 0
 
         AgentModelClient.complete(
-            config = modelConfig(),
+            config = modelConfig().copy(modelSupportsVision = true),
             prompt = "连续观察",
             toolExecutor = AgentModelClient.ToolExecutor {
                 val reference = if (observationIndex++ == 0) firstImage else secondImage
