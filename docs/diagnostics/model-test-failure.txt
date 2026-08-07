@@ -1,0 +1,21 @@
+model shard gradle exit: 1
+
+Gradle failed but no JUnit failure element was produced.
+Available result files:
+- TEST-fuck.andes.agent.model.AgentConversationCodecTest.xml
+- TEST-fuck.andes.agent.model.AgentDeviceToolCatalogTest.xml
+- TEST-fuck.andes.agent.model.AgentFileVisionToolCatalogTest.xml
+- TEST-fuck.andes.agent.model.AgentGoalModeLoopTest.xml
+- TEST-fuck.andes.agent.model.AgentModelClientLoopTest.xml
+- TEST-fuck.andes.agent.model.AgentPromptBuilderTest.xml
+- TEST-fuck.andes.agent.model.AgentSensitiveTranscriptTest.xml
+- TEST-fuck.andes.agent.model.AgentToolCatalogTest.xml
+- TEST-fuck.andes.agent.model.AgentTraceFormatterTest.xml
+- TEST-fuck.andes.agent.model.AnthropicMessagesProviderTest.xml
+- TEST-fuck.andes.agent.model.CustomHeaderAndBodyTest.xml
+- TEST-fuck.andes.agent.model.OpenAiChatCompletionsProviderTest.xml
+- TEST-fuck.andes.agent.model.ProviderReasoningTest.xml
+- TEST-fuck.andes.agent.model.ProviderUrlsTest.xml
+- TEST-fuck.andes.agent.model.SkillInstallModelToolGateTest.xml
+- TEST-fuck.andes.agent.model.SkillInstallToolCatalogTest.xml
+- binary
