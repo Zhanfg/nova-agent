@@ -30,6 +30,26 @@ internal object AgentWorkspaceToolCatalog {
             "workspace_id" to string("workspace_id"),
             "max_count" to integer("最多返回多少条 commit，1-200"),
         ), required = listOf("workspace_id")))
+        tools.put(function("git_stage", "将指定 workspace 相对路径加入 Git index。", obj(
+            "workspace_id" to string("workspace_id"),
+            "paths" to stringArray("1-200 个 workspace 相对路径"),
+        ), required = listOf("workspace_id", "paths")))
+        tools.put(function("git_unstage", "从 Git index 取消暂存指定路径，不丢弃 working tree 内容。", obj(
+            "workspace_id" to string("workspace_id"),
+            "paths" to stringArray("1-200 个 workspace 相对路径"),
+        ), required = listOf("workspace_id", "paths")))
+        tools.put(function("git_restore", "丢弃指定路径的 working tree 修改。该操作具有破坏性，只能在用户明确要求或 Review 明确选择后调用。", obj(
+            "workspace_id" to string("workspace_id"),
+            "paths" to stringArray("1-200 个 workspace 相对路径"),
+        ), required = listOf("workspace_id", "paths")))
+        tools.put(function("git_commit", "提交当前 staged changes。不会自动 stage 未审查文件。", obj(
+            "workspace_id" to string("workspace_id"),
+            "message" to string("commit message"),
+        ), required = listOf("workspace_id", "message")))
+        tools.put(function("git_create_branch", "在当前 workspace 创建并切换到新 branch。", obj(
+            "workspace_id" to string("workspace_id"),
+            "branch" to string("新 branch 名"),
+        ), required = listOf("workspace_id", "branch")))
         tools.put(function("project_instructions", "按 repository root → 当前目录层级读取 AGENTS.md，并返回可注入模型的项目指令。", obj(
             "workspace_id" to string("workspace_id"),
             "working_directory" to string("可选工作目录；默认 workspace effective path"),
@@ -61,4 +81,11 @@ internal object AgentWorkspaceToolCatalog {
 
     private fun integer(description: String): JSONObject =
         JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 200).put("description", description)
+
+    private fun stringArray(description: String): JSONObject = JSONObject()
+        .put("type", "array")
+        .put("items", JSONObject().put("type", "string"))
+        .put("minItems", 1)
+        .put("maxItems", 200)
+        .put("description", description)
 }
