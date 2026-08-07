@@ -151,6 +151,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 ),
             )
         }
+        AgentRunQueuePolicy.drain(runQueue).forEach { queued ->
+            sendResultTo(
+                queued.replyTo,
+                AgentRuntimeWire.RunResult(
+                    runId = queued.request.runId,
+                    ok = false,
+                    content = "",
+                    error = "Agent Runtime 服务已停止",
+                ),
+            )
+        }
         activeSession?.cancel("Agent Runtime 服务已停止")
         activeSession = null
         mainHandler.removeCallbacksAndMessages(null)
