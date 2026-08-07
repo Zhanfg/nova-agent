@@ -41,7 +41,10 @@ internal object AgentConversationStore {
     private val saveMutex = Mutex()
 
     fun load(context: Context): Snapshot =
-        runBlocking(Dispatchers.IO) {
+        runBlocking {
+            // Room suspend DAO methods already dispatch through Room's query/transaction executors.
+            // Adding Dispatchers.IO around this synchronous bridge creates an unnecessary second
+            // executor hop and can keep Robolectric/JVM workers alive after the database is closed.
             loadSnapshot(context.applicationContext)
         }
 
