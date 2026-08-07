@@ -2,6 +2,8 @@ package fuck.andes.agent.workspace
 
 import android.content.Context
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,8 +36,17 @@ internal class AgentWorkspaceRegistry(
 
     fun register(workspace: AgentWorkspace): AgentWorkspace = synchronized(mutationLock) {
         require(workspace.workspaceId.isNotBlank()) { "workspaceId 不能为空" }
-        workspaces[workspace.workspaceId] = workspace
-        persistLocked()
+        val previous = workspaces.put(workspace.workspaceId, workspace)
+        try {
+            persistLocked()
+        } catch (failure: Throwable) {
+            if (previous == null) {
+                workspaces.remove(workspace.workspaceId, workspace)
+            } else {
+                workspaces[workspace.workspaceId] = previous
+            }
+            throw failure
+        }
         workspace
     }
 
@@ -43,8 +54,14 @@ internal class AgentWorkspaceRegistry(
         workspaceId.takeIf(String::isNotBlank)?.let(workspaces::get)
 
     fun remove(workspaceId: String): AgentWorkspace? = synchronized(mutationLock) {
-        val removed = workspaceId.takeIf(String::isNotBlank)?.let(workspaces::remove)
-        if (removed != null) persistLocked()
+        val normalized = workspaceId.takeIf(String::isNotBlank) ?: return@synchronized null
+        val removed = workspaces.remove(normalized) ?: return@synchronized null
+        try {
+            persistLocked()
+        } catch (failure: Throwable) {
+            workspaces[normalized] = removed
+            throw failure
+        }
         removed
     }
 
@@ -52,8 +69,14 @@ internal class AgentWorkspaceRegistry(
         .sortedWith(compareBy<AgentWorkspace> { it.repositoryRoot.orEmpty() }.thenBy { it.workspaceId })
 
     fun clearForTests() = synchronized(mutationLock) {
+        val previous = workspaces.toMap()
         workspaces.clear()
-        persistLocked()
+        try {
+            persistLocked()
+        } catch (failure: Throwable) {
+            workspaces.putAll(previous)
+            throw failure
+        }
     }
 
     private fun persistLocked() {
@@ -78,23 +101,32 @@ internal class AgentWorkspaceFilePersistence(
     }
 
     override fun save(workspaces: List<AgentWorkspace>) {
-        file.parentFile?.mkdirs()
+        val parent = file.parentFile ?: error("workspace registry 缺少父目录")
+        if (!parent.exists() && !parent.mkdirs()) {
+            error("无法创建 workspace registry 目录")
+        }
         val payload = JSONArray().also { array ->
             workspaces.forEach { workspace -> array.put(workspace.toJson()) }
         }.toString()
-        val temp = File(file.parentFile ?: file.absoluteFile.parentFile, "${file.name}.tmp")
+        val temp = File(parent, "${file.name}.tmp")
         temp.writeText(payload)
-        if (!temp.renameTo(file)) {
-            // Some filesystems do not replace an existing file with renameTo. Retry after deleting
-            // the previous snapshot; a failed retry is surfaced instead of silently losing state.
-            if (file.exists() && !file.delete()) {
-                temp.delete()
-                error("无法替换 workspace registry")
+        try {
+            runCatching {
+                Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }.getOrElse {
+                Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
             }
-            if (!temp.renameTo(file)) {
-                temp.delete()
-                error("无法提交 workspace registry")
-            }
+        } finally {
+            if (temp.exists()) temp.delete()
         }
     }
 
