@@ -91,6 +91,34 @@ class AgentTaskSchedulerTest {
     }
 
     @Test
+    fun olderMultiResourceWaiterReservesSharedResourceAgainstNewerTask() {
+        val scheduler = AgentTaskScheduler()
+        scheduler.submit(TaskSpec("ui-holder", setOf(Resource.DeviceUi)))
+
+        assertEquals(
+            SubmitResult.Queued(1),
+            scheduler.submit(
+                TaskSpec(
+                    "older",
+                    setOf(Resource.DeviceUi, Resource.WorkspaceWrite("shared")),
+                )
+            ),
+        )
+        assertEquals(
+            SubmitResult.Queued(2),
+            scheduler.submit(TaskSpec("newer-writer", setOf(Resource.WorkspaceWrite("shared")))),
+        )
+        assertEquals(
+            SubmitResult.Started,
+            scheduler.submit(TaskSpec("independent", setOf(Resource.TerminalSession("t1")))),
+        )
+
+        val release = scheduler.release("ui-holder")
+        assertEquals(listOf("older"), release.newlyStarted.map { it.runId })
+        assertEquals(listOf("newer-writer"), scheduler.queuedTasks().map { it.runId })
+    }
+
+    @Test
     fun cancellingQueuedTaskOnlyRemovesMatchingRunId() {
         val scheduler = AgentTaskScheduler()
         scheduler.submit(TaskSpec("active", setOf(Resource.DeviceUi)))
