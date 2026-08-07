@@ -1,0 +1,110 @@
+name: One-shot runtime work-state guards
+
+on:
+  push:
+    branches:
+      - fix/ci-baseline-and-nova-branding
+    paths:
+      - .github/workflows/one-shot-runtime-work-state.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/ci-baseline-and-nova-branding
+          fetch-depth: 0
+
+      - name: Patch runtime work-state guards
+        shell: bash
+        run: |
+          cat >/tmp/patch_runtime_work_state.py <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt')
+          text = path.read_text()
+
+          old_start = '''    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action != ACTION_KEEP_ALIVE || activeSession == null) {
+            stopSelf(startId)
+        }
+        return START_NOT_STICKY
+    }
+'''
+          new_start = '''    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action != ACTION_KEEP_ALIVE || !hasRuntimeWork()) {
+            stopSelf(startId)
+        }
+        return START_NOT_STICKY
+    }
+'''
+          if old_start not in text:
+              raise SystemExit('onStartCommand anchor not found')
+          text = text.replace(old_start, new_start, 1)
+
+          old_failure = '''        if (
+            activeSession != null ||
+            pendingStartRequests.active() != null ||
+            pendingStartRequests.waitingCount() > 0 ||
+            runQueue.isNotEmpty()
+        ) {
+            return
+        }
+'''
+          new_failure = '''        if (hasRuntimeWork()) return
+'''
+          if old_failure not in text:
+              raise SystemExit('finishWithFailure anchor not found')
+          text = text.replace(old_failure, new_failure, 1)
+
+          old_stop = '''    private fun requestStop() {
+        val session = activeSession
+        if (session == null) {
+            dismissAndStop()
+            return
+        }
+        cancelRun(session.runId)
+    }
+'''
+          new_stop = '''    private fun requestStop() {
+        val runId = activeSession?.runId
+            ?: pendingStartRequests.active()?.incoming?.request?.runId
+            ?: runQueue.firstOrNull()?.request?.runId
+        if (runId == null) {
+            dismissAndStop()
+            return
+        }
+        cancelRun(runId)
+    }
+
+    private fun hasRuntimeWork(): Boolean =
+        activeSession != null ||
+            pendingStartRequests.active() != null ||
+            pendingStartRequests.waitingCount() > 0 ||
+            runQueue.isNotEmpty()
+'''
+          if old_stop not in text:
+              raise SystemExit('requestStop anchor not found')
+          text = text.replace(old_stop, new_stop, 1)
+
+          path.write_text(text)
+          PY
+          python3 /tmp/patch_runtime_work_state.py
+          git diff --check
+          git diff -- app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt
+
+      - name: Commit guards and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-runtime-work-state.yml
+          git add app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt
+          git commit -m 'fix: unify runtime work-state lifecycle guards'
+          git push origin HEAD:fix/ci-baseline-and-nova-branding
