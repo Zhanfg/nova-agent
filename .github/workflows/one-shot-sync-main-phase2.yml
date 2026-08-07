@@ -1,0 +1,37 @@
+name: One-shot sync main into Mobile Codex Phase 2
+
+on:
+  push:
+    branches:
+      - feat/mobile-codex-workspaces
+    paths:
+      - .github/workflows/one-shot-sync-main-phase2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Phase 2 branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/mobile-codex-workspaces
+          fetch-depth: 0
+
+      - name: Merge current main
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Remove helper and push synchronized branch
+        shell: bash
+        run: |
+          git rm .github/workflows/one-shot-sync-main-phase2.yml
+          git commit -m 'ci: remove Phase 2 synchronization helper'
+          git push origin HEAD:feat/mobile-codex-workspaces
