@@ -36,5 +36,6 @@ internal object AgentToolCatalog {
                 AgentTerminalToolCatalog.appendTo(tools)
                 AgentWorkspaceToolCatalog.appendTo(tools)
             }
+            AgentGoalToolCatalog.appendTo(tools)
         }
 }
