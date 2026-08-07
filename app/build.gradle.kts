@@ -8,8 +8,7 @@ plugins {
 fun releaseEnvironmentValue(primaryName: String, legacyName: String): String? =
     sequenceOf(primaryName, legacyName)
         .mapNotNull(System::getenv)
-        .map(String::trim)
-        .firstOrNull(String::isNotEmpty)
+        .firstOrNull(String::isNotBlank)
 
 val releaseStoreFile = releaseEnvironmentValue(
     primaryName = "NOVA_RELEASE_STORE_FILE",
