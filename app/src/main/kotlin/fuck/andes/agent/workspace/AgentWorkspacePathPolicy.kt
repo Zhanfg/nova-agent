@@ -52,7 +52,7 @@ internal object AgentWorkspacePathPolicy {
     }
 
     internal fun isLinuxVisible(path: String): Boolean {
-        val normalized = File(path).normalize().path
+        val normalized = File(path).toPath().normalize().toString()
         return isWithin(normalized, SHARED_STORAGE_ROOT) || isWithin(normalized, LOCAL_TMP_ROOT)
     }
 
