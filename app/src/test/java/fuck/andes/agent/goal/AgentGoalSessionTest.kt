@@ -19,32 +19,75 @@ class AgentGoalSessionTest {
 
     @Test
     fun finalAnswerIsRejectedUntilEveryCriterionHasPassingEvidence() {
-        var now = 100L
-        val session = AgentGoalSession(clock = { now })
+        val session = AgentGoalSession(clock = { 100L })
         begin(session)
 
-        val firstDecision = session.completionDecision()
-        assertTrue(firstDecision is AgentGoalSession.CompletionDecision.Continue)
-
-        evidence(session, "build", "passed")
         assertTrue(session.completionDecision() is AgentGoalSession.CompletionDecision.Continue)
 
-        evidence(session, "tests", "passed")
+        evidence(session, "build", ok = true)
+        assertTrue(session.completionDecision() is AgentGoalSession.CompletionDecision.Continue)
+
+        evidence(session, "tests", ok = true)
         assertEquals(AgentGoalSession.CompletionDecision.Allow, session.completionDecision())
-        now += 1
     }
 
     @Test
-    fun failedEvidenceMustBeSupersededBeforeCompletion() {
+    fun modelCannotInventPassedEvidenceWithoutExecutedToolCall() {
         val session = AgentGoalSession(clock = { 100L })
         begin(session)
-        evidence(session, "build", "passed")
-        evidence(session, "tests", "failed")
 
-        val failed = session.completionDecision()
-        assertTrue(failed is AgentGoalSession.CompletionDecision.Continue)
+        val result = session.execute(
+            AgentModelClient.ToolCall(
+                id = "fake-evidence",
+                name = AgentGoalSession.TOOL_EVIDENCE,
+                argumentsJson = JSONObject()
+                    .put("criterion_id", "build")
+                    .put("tool_call_id", "never-executed")
+                    .put("summary", "声称构建通过")
+                    .toString(),
+            )
+        ) ?: error("goal evidence was not handled")
 
-        evidence(session, "tests", "passed", summary = "rerun green")
+        val json = JSONObject(result.content)
+        assertFalse(json.getBoolean("ok"))
+        assertEquals("GOAL_EVIDENCE_NOT_EXECUTED", json.getString("code"))
+        assertTrue(session.completionDecision() is AgentGoalSession.CompletionDecision.Continue)
+    }
+
+    @Test
+    fun unstructuredToolResultCannotBecomeVerificationEvidence() {
+        val session = AgentGoalSession(clock = { 100L })
+        begin(session)
+        session.recordToolExecution(
+            AgentModelClient.ToolCall("tool-plain", "run_command", "{}"),
+            AgentModelClient.ToolResult("command finished"),
+        )
+
+        val result = session.execute(
+            AgentModelClient.ToolCall(
+                id = "evidence-build",
+                name = AgentGoalSession.TOOL_EVIDENCE,
+                argumentsJson = JSONObject()
+                    .put("criterion_id", "build")
+                    .put("tool_call_id", "tool-plain")
+                    .put("summary", "没有结构化结果")
+                    .toString(),
+            )
+        ) ?: error("goal evidence was not handled")
+
+        assertEquals("GOAL_EVIDENCE_NOT_EXECUTED", JSONObject(result.content).getString("code"))
+    }
+
+    @Test
+    fun failedToolEvidenceMustBeSupersededBySuccessfulRerun() {
+        val session = AgentGoalSession(clock = { 100L })
+        begin(session)
+        evidence(session, "build", ok = true)
+        evidence(session, "tests", ok = false)
+
+        assertTrue(session.completionDecision() is AgentGoalSession.CompletionDecision.Continue)
+
+        evidence(session, "tests", ok = true, summary = "rerun green")
         assertEquals(AgentGoalSession.CompletionDecision.Allow, session.completionDecision())
     }
 
@@ -93,6 +136,34 @@ class AgentGoalSessionTest {
     }
 
     @Test
+    fun wrapperRecordsSuccessfulNormalToolForLaterEvidenceBinding() {
+        val session = AgentGoalSession(clock = { 100L })
+        val wrapper = AgentGoalToolExecutor(
+            goalSession = session,
+            delegate = AgentModelClient.ToolExecutor {
+                AgentModelClient.ToolResult(JSONObject().put("ok", true).toString())
+            },
+        )
+        wrapper.execute(beginCall())
+        wrapper.execute(AgentModelClient.ToolCall("build-tool", "run_command", "{}"))
+
+        val evidence = wrapper.execute(
+            AgentModelClient.ToolCall(
+                id = "bind-build",
+                name = AgentGoalSession.TOOL_EVIDENCE,
+                argumentsJson = JSONObject()
+                    .put("criterion_id", "build")
+                    .put("tool_call_id", "build-tool")
+                    .put("summary", "真实构建命令成功")
+                    .toString(),
+            )
+        )
+
+        assertTrue(JSONObject(evidence.content).getBoolean("ok"))
+        assertTrue(session.completionDecision() is AgentGoalSession.CompletionDecision.Continue)
+    }
+
+    @Test
     fun stepBudgetStopsUnverifiedContinuation() {
         val session = AgentGoalSession(clock = { 100L })
         val beginArgs = beginArgs().put("max_steps", 2)
@@ -130,18 +201,26 @@ class AgentGoalSessionTest {
     private fun evidence(
         session: AgentGoalSession,
         criterionId: String,
-        status: String,
+        ok: Boolean,
         summary: String = "verified",
     ) {
+        val toolCallId = "verify-$criterionId-${if (ok) "pass" else "fail"}"
+        session.recordToolExecution(
+            AgentModelClient.ToolCall(
+                id = toolCallId,
+                name = "run_command",
+                argumentsJson = JSONObject().put("command", "verify-$criterionId").toString(),
+            ),
+            AgentModelClient.ToolResult(JSONObject().put("ok", ok).toString()),
+        )
         val result = session.execute(
             AgentModelClient.ToolCall(
-                id = "evidence-$criterionId-$status",
+                id = "evidence-$criterionId-${if (ok) "pass" else "fail"}",
                 name = AgentGoalSession.TOOL_EVIDENCE,
                 argumentsJson = JSONObject()
                     .put("criterion_id", criterionId)
-                    .put("status", status)
+                    .put("tool_call_id", toolCallId)
                     .put("summary", summary)
-                    .put("source", "test")
                     .toString(),
             )
         ) ?: error("goal evidence was not handled")
