@@ -1,0 +1,44 @@
+name: One-shot workspace conversation v12 v2
+
+on:
+  push:
+    branches:
+      - feat/mobile-codex-workspaces
+    paths:
+      - .github/workflows/one-shot-workspace-conversation-v12-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/mobile-codex-workspaces
+          fetch-depth: 0
+      - name: Apply corrected workspace persistence patch
+        run: python3 .github/patches/workspace_conversation_v12_v2.py
+      - name: Validate patch
+        run: git diff --check
+      - name: Commit and remove all workspace persistence helpers
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-workspace-conversation-v12.yml \
+            .github/patches/workspace_conversation_v12.py \
+            .github/workflows/one-shot-workspace-conversation-v12-v2.yml \
+            .github/patches/workspace_conversation_v12_v2.py
+          git add app/src/main/kotlin/fuck/andes/agent/tool/AgentWorkspaceTools.kt \
+            app/src/main/kotlin/fuck/andes/ui/model/AgentChatUiState.kt \
+            app/src/main/kotlin/fuck/andes/data/db/ConversationEntities.kt \
+            app/src/main/kotlin/fuck/andes/data/db/FuckAndesDatabase.kt \
+            app/src/main/kotlin/fuck/andes/ui/app/AgentConversationStore.kt \
+            app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeWire.kt \
+            app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt \
+            app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeRunExecutor.kt \
+            app/src/test/java/fuck/andes/data/db/FuckAndesDatabaseMigrationTest.kt
+          git commit -m 'feat: persist conversation workspace and inject AGENTS before first model request'
+          git push origin HEAD:feat/mobile-codex-workspaces
