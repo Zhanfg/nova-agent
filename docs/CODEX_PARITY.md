@@ -43,7 +43,7 @@
 | Worktree/隔离工作区 | Yes | Missing | 同仓库多任务可在隔离工作区并行，合并/丢弃安全 |
 | 多 Agent 并行 | Yes | Missing | 至少多个独立 task/session 并行运行，独立上下文、日志、取消与资源占用 |
 | 长任务/后台执行 | Yes | Partial | App 退后台后任务继续；状态持久化；系统回收后可恢复或明确失败 |
-| 任务队列/精确取消 | Yes | Present, evolving | 同资源严格 FIFO；取消一个 `runId` 不影响其他任务；不同资源可并行 |
+| 任务队列/精确取消 | Yes | Present (single-runtime baseline); multi-agent pending | 同资源严格 FIFO；取消一个 `runId` 不影响其他任务；不同资源可并行 |
 | Pause/Resume/Steer | Yes | Present | 对指定 task 暂停、继续、追加指令，不串任务 |
 | Goal mode | Yes | Missing | 用户定义 outcome + success criteria；Agent 持续验证直至成功、阻塞或预算终止 |
 | Skills | Yes | Present | 安装、更新、禁用、资源读取、冲突恢复、项目/用户作用域 |
