@@ -12,6 +12,23 @@ internal object AgentRunQueuePolicy {
         queuedCount: Int,
     ): Boolean = hasActiveNonTerminalSession || queuedCount > 0
 
+    /**
+     * A runId must identify at most one in-flight request across ingest, active execution and the
+     * materialized run queue. Without this invariant precise cancel/result routing becomes
+     * ambiguous even if each individual queue is otherwise FIFO.
+     */
+    fun isDuplicateRunId(
+        runId: String,
+        activeRunId: String?,
+        ingestContainsRunId: Boolean,
+        queuedContainsRunId: Boolean,
+    ): Boolean =
+        runId.isNotBlank() && (
+            activeRunId == runId ||
+                ingestContainsRunId ||
+                queuedContainsRunId
+            )
+
     fun <T> removeQueuedByRunId(
         queue: ArrayDeque<T>,
         runId: String,
