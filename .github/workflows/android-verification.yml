@@ -39,11 +39,21 @@ jobs:
             label: 图片编解码
             patterns: |
               fuck.andes.agent.media.*
-          - id: presentation
-            label: 浏览器与界面
+          - id: browser
+            label: 浏览器协议
             patterns: |
               fuck.andes.agent.browser.*
-              fuck.andes.ui.*
+          - id: ui-state
+            label: UI 状态与持久化
+            patterns: |
+              fuck.andes.ui.app.*
+          - id: ui-policy
+            label: UI 策略与格式化
+            patterns: |
+              fuck.andes.ui.components.*
+              fuck.andes.ui.markdown.*
+              fuck.andes.ui.model.*
+              fuck.andes.ui.pages.*
           - id: data-skills
             label: 数据、Skills 与工具
             patterns: |
