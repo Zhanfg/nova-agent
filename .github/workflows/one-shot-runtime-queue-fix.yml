@@ -1,0 +1,119 @@
+name: One-shot runtime queue fix
+
+on:
+  push:
+    branches:
+      - fix/ci-baseline-and-nova-branding
+    paths:
+      - .github/workflows/one-shot-runtime-queue-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/ci-baseline-and-nova-branding
+          fetch-depth: 0
+
+      - name: Patch queue semantics
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt')
+          text = path.read_text()
+
+          old_dispatch = '''                        val current = activeSession
+                        if (current != null && !current.isTerminal) {
+                            enqueueOrReject(constrained, replyTo)
+                        } else {
+                            startRun(constrained, replyTo)
+                        }
+'''
+          new_dispatch = '''                        if (shouldQueueNewRun()) {
+                            enqueueOrReject(constrained, replyTo)
+                        } else {
+                            startRun(constrained, replyTo)
+                        }
+'''
+          if old_dispatch not in text:
+              raise SystemExit('dispatch anchor not found')
+          text = text.replace(old_dispatch, new_dispatch, 1)
+
+          anchor = '''    private fun enqueueOrReject(
+        request: AgentRuntimeWire.RunRequest,
+        replyTo: Messenger?,
+    ) {
+'''
+          helper = '''    private fun shouldQueueNewRun(): Boolean {
+        val current = activeSession
+        return (current != null && !current.isTerminal) || runQueue.isNotEmpty()
+    }
+
+'''
+          if anchor not in text:
+              raise SystemExit('enqueue anchor not found')
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old_cancel = '''        if (runQueue.isNotEmpty()) {
+            runQueue.clear()
+            AndroidAgentLogger.info("Agent run queue cleared by cancel: runId=$runId")
+        }
+        val session = activeSession ?: return
+        if (runId != session.runId) {
+            AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
+            return
+        }
+'''
+          new_cancel = '''        val queued = runQueue.firstOrNull { it.request.runId == runId }
+        if (queued != null) {
+            runQueue.remove(queued)
+            sendResultTo(
+                queued.replyTo,
+                AgentRuntimeWire.RunResult(
+                    runId = runId,
+                    ok = false,
+                    content = "",
+                    error = "已停止",
+                ),
+            )
+            AndroidAgentLogger.info(
+                "Queued Agent run cancelled: runId=$runId, queueSize=${runQueue.size}"
+            )
+            return
+        }
+        val session = activeSession ?: run {
+            AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
+            return
+        }
+        if (runId != session.runId) {
+            AndroidAgentLogger.debug { "Agent runtime ignored stale cancel request" }
+            return
+        }
+'''
+          if old_cancel not in text:
+              raise SystemExit('cancel anchor not found')
+          text = text.replace(old_cancel, new_cancel, 1)
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt
+
+      - name: Commit queue fix and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name 'Axymorrsen'
+          git config user.email 'Axymosen@outlook.com'
+          git rm .github/workflows/one-shot-runtime-queue-fix.yml
+          git add app/src/main/kotlin/fuck/andes/agent/runtime/AgentRuntimeService.kt
+          git commit -m '[skip ci] fix: enforce FIFO queue cancellation semantics'
+          git push origin HEAD:fix/ci-baseline-and-nova-branding
