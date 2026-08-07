@@ -362,7 +362,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 },
             )
         } finally {
-            startNextQueuedRun()
+            startNextQueuedRun(session)
         }
     }
 
@@ -387,16 +387,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         AndroidAgentLogger.info("Agent run queued: runId=${request.runId}, queueSize=${runQueue.size}")
     }
 
-    private fun startNextQueuedRun() {
+    private fun startNextQueuedRun(completedSession: AgentRuntimeSession) {
         // executeRun 在工作线程结束。队列本身、Compose 状态、Service 生命周期和浮层状态
-        // 都由主线程管理，必须把下一任务的出队与启动一起切回主线程。
+        // 都由主线程管理。若主线程已经启动了另一会话，旧会话不得再抢占队列。
         mainHandler.post {
+            val current = activeSession
+            if (current != null && current !== completedSession) return@post
             val next = runQueue.removeFirstOrNull() ?: return@post
-            startRun(next.request, next.replyTo)
             sendEventTo(
                 next.replyTo,
                 AgentEvent.RunQueueStarted(runId = next.request.runId, queueSize = runQueue.size),
             )
+            startRun(next.request, next.replyTo)
         }
     }
 
