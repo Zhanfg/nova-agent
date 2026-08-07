@@ -8,10 +8,10 @@ import fuck.andes.agent.workspace.AgentGitWorkspaceManager
 import fuck.andes.agent.workspace.AgentProjectInstructions
 import fuck.andes.agent.workspace.AgentUnifiedDiffParser
 import fuck.andes.agent.workspace.AgentWorkspace
+import fuck.andes.agent.workspace.AgentWorkspacePathPolicy
 import fuck.andes.agent.workspace.AgentWorkspaceRegistry
 import fuck.andes.agent.workspace.AgentWorkspaceRuntimeRegistry
 import fuck.andes.agent.workspace.RootShellGitExecutor
-import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -24,7 +24,7 @@ internal class AgentWorkspaceTools(
     private val git = RootShellGitExecutor(terminalController)
     private val manager = AgentGitWorkspaceManager(
         git = git,
-        worktreeBaseDir = File(context.filesDir, "agent/worktrees").absolutePath,
+        worktreeBaseDir = AgentWorkspacePathPolicy.generatedWorktreeBase(context),
     )
     private val mutations = AgentGitMutationService(git)
 
@@ -45,7 +45,10 @@ internal class AgentWorkspaceTools(
     }
 
     private fun inspect(args: JSONObject): String {
-        val result = manager.inspect(args.getString("path"))
+        val validation = AgentWorkspacePathPolicy.validateReadableWorkspace(args.getString("path"))
+        val path = validation.canonicalPath
+            ?: return error("WORKSPACE_PATH_UNAVAILABLE", validation.error ?: "workspace 路径不可用")
+        val result = manager.inspect(path)
         val workspace = result.workspace ?: return error("WORKSPACE_INSPECT_FAILED", result.error ?: "检查失败")
         workspaceRegistry.register(workspace)
         return attachProjectInstructions(
@@ -99,7 +102,7 @@ internal class AgentWorkspaceTools(
         if (!result.complete) {
             return error(
                 "GIT_DIFF_TRUNCATED",
-                "Git diff 超出当前 terminal 单次输出上限；禁止把截断内容当作完整 Review。请改用后续分页/文件流接口。",
+                "Git diff 超出结构化 Review 输出上限；禁止把截断内容当作完整 Review，请缩小 diff 范围或使用后续分页接口。",
             )
         }
         val changes = AgentUnifiedDiffParser.parse(result.stdout)
