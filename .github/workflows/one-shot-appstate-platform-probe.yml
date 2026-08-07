@@ -19,54 +19,15 @@ jobs:
         with:
           ref: fix/ci-baseline-and-nova-branding
           fetch-depth: 0
-      - name: Decouple platform probes from pure state construction
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt')
-          text = path.read_text()
-          old_ctor = '''    skillZipImportGateway: SkillZipImportGateway? = null,
-              startBackgroundWork: Boolean = true,
-              initialConversationSnapshot: AgentConversationStore.Snapshot? = null,
-          ) {'''
-          new_ctor = '''    skillZipImportGateway: SkillZipImportGateway? = null,
-              startBackgroundWork: Boolean = true,
-              initialConversationSnapshot: AgentConversationStore.Snapshot? = null,
-              probePlatformState: Boolean = startBackgroundWork,
-          ) {'''
-          if old_ctor not in text:
-              raise SystemExit('constructor anchor not found')
-          text = text.replace(old_ctor, new_ctor, 1)
-
-          old_permission = '''    var permissionHealthState by mutableStateOf(buildPermissionHealthState(appContext))
-              private set
-
-          var systemEnhanceState by mutableStateOf(buildSystemEnhanceState())
-              private set
-'''
-          new_permission = '''    var permissionHealthState by mutableStateOf(
-              if (probePlatformState) buildPermissionHealthState(appContext) else PermissionHealthUiState(emptyList())
-          )
-              private set
-
-          var systemEnhanceState by mutableStateOf(
-              if (probePlatformState) buildSystemEnhanceState() else AgentSystemEnhanceUiState(emptyList())
-          )
-              private set
-'''
-          if old_permission not in text:
-              raise SystemExit('platform state anchor not found')
-          text = text.replace(old_permission, new_permission, 1)
-          path.write_text(text)
-          PY
-          git diff --check
-      - name: Commit and remove helper
-        shell: bash
+      - name: Apply patch
+        run: python3 .github/patches/appstate_platform_probe.py
+      - name: Validate patch
+        run: git diff --check
+      - name: Commit patch and remove helpers
         run: |
           git config user.name 'Axymorrsen'
           git config user.email 'Axymosen@outlook.com'
-          git rm .github/workflows/one-shot-appstate-platform-probe.yml
+          git rm .github/workflows/one-shot-appstate-platform-probe.yml .github/patches/appstate_platform_probe.py
           git add app/src/main/kotlin/fuck/andes/ui/app/AgentAppState.kt
           git commit -m 'fix: isolate AgentAppState platform probes from pure state mode'
           git push origin HEAD:fix/ci-baseline-and-nova-branding
