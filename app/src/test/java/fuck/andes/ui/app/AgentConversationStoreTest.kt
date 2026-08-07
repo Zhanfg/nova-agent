@@ -15,6 +15,7 @@ import fuck.andes.ui.model.UserMessageUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
@@ -35,6 +36,12 @@ class AgentConversationStoreTest {
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
+        FuckAndesDatabase.closeForTests()
+        context.deleteDatabase("fuck_andes.db")
+    }
+
+    @After
+    fun tearDown() {
         FuckAndesDatabase.closeForTests()
         context.deleteDatabase("fuck_andes.db")
     }
