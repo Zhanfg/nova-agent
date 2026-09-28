@@ -4,9 +4,9 @@
 
 模型提供商列表中的品牌图标来自
 [Lobe Icons](https://github.com/lobehub/lobe-icons) 的
-`@lobehub/icons-static-avatar` 1.13.0。原始 1280×1280 WebP 素材在不改变颜色和比例的前提下，无损缩放为 128×128 后随 Eta 本地打包。
+`@lobehub/icons-static-avatar` 1.13.0。原始 1280×1280 WebP 素材在不改变颜色和比例的前提下，无损缩放为 128×128 后随 Nova 本地打包。
 
-| Eta 资源 | Lobe Icons Avatar |
+| Nova 资源 | Lobe Icons Avatar |
 | --- | --- |
 | `provider_logo_openai.webp` | `openai.webp` |
 | `provider_logo_anthropic.webp` | `anthropic.webp` |
@@ -45,4 +45,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-OpenAI、Anthropic、阿里云百炼、DeepSeek、Kimi、Xiaomi MiMo、MiniMax、StepFun、硅基流动和 OpenRouter 的名称、图标及其他品牌标识归各自权利人所有。Eta 展示这些图标仅用于准确标识用户正在配置的模型服务，不表示这些厂商对 Eta 的赞助、认可或合作关系。OpenAI 图标的使用还应遵循其[品牌规范](https://openai.com/brand/)。
+OpenAI、Anthropic、阿里云百炼、DeepSeek、Kimi、Xiaomi MiMo、MiniMax、StepFun、硅基流动和 OpenRouter 的名称、图标及其他品牌标识归各自权利人所有。Nova 展示这些图标仅用于准确标识用户正在配置的模型服务，不表示这些厂商对 Nova 的赞助、认可或合作关系。OpenAI 图标的使用还应遵循其[品牌规范](https://openai.com/brand/)。
