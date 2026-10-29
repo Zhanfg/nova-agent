@@ -6,11 +6,9 @@ import org.junit.Test
 
 class ModuleConfigEntryPackagesTest {
     @Test
-    fun runtimeOnlyTrustsTheKnownAssistantEntryPackages() {
-        assertEquals(
-            setOf("com.heytap.speechassist", "com.miui.voiceassist"),
-            ModuleConfig.AGENT_RUNTIME_ENTRY_PACKAGES,
-        )
+    fun assistantPackagesRemainHookTargets() {
+        assertEquals("com.heytap.speechassist", ModuleConfig.BREENO_PACKAGE)
+        assertEquals("com.miui.voiceassist", ModuleConfig.XIAOAI_PACKAGE)
         assertTrue(ModuleConfig.XIAOAI_CORE_PROCESS.endsWith(":core"))
     }
 }

@@ -1,5 +1,16 @@
 package fuck.andes.agent.runtime
 
+import android.content.pm.PackageManager
+
+internal const val AGENT_RUNTIME_BIND_PERMISSION = "fuck.andes.permission.BIND_AGENT_RUNTIME"
+
+/**
+ * 包名不能证明调用者身份。只有 [PackageManager.checkSignatures] 的
+ * [PackageManager.SIGNATURE_MATCH] 可以放行其他 UID；该结果覆盖该 UID 下的全部分包。
+ */
+internal fun runtimeCallerSignatureMatches(signatureCompareResult: Int): Boolean =
+    signatureCompareResult == PackageManager.SIGNATURE_MATCH
+
 /**
  * 单次 Binder transaction 的调用者判断。
  *

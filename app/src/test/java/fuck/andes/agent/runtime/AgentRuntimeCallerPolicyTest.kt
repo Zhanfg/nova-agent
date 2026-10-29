@@ -1,7 +1,9 @@
 package fuck.andes.agent.runtime
 
+import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Parcel
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -115,5 +117,48 @@ class AgentRuntimeCallerPolicyTest {
         } finally {
             Binder.restoreCallingIdentity(token)
         }
+    }
+
+    @Test
+    fun samePackageNameWithADifferentCertificateIsDenied() {
+        val spoofedPackages = listOf("com.heytap.speechassist", "com.miui.voiceassist")
+        val policy = AgentRuntimeCallerPolicy(myUid = 10) {
+            runtimeCallerSignatureMatches(PackageManager.SIGNATURE_NO_MATCH)
+        }
+
+        assertTrue(spoofedPackages.isNotEmpty())
+        assertFalse(policy.isAllowed(2_000))
+    }
+
+    @Test
+    fun matchingSignatureAllowsAnotherUidWithoutAPackageName() {
+        val policy = AgentRuntimeCallerPolicy(myUid = 10) {
+            runtimeCallerSignatureMatches(PackageManager.SIGNATURE_MATCH)
+        }
+
+        assertTrue(policy.isAllowed(2_000))
+        assertFalse(runtimeCallerSignatureMatches(PackageManager.SIGNATURE_NO_MATCH))
+        assertFalse(runtimeCallerSignatureMatches(PackageManager.SIGNATURE_UNKNOWN_PACKAGE))
+    }
+
+    @Test
+    fun manifestRequiresTheSignaturePermissionOnTheRuntimeService() {
+        val manifest = sequenceOf(
+            File("src/main/AndroidManifest.xml"),
+            File("app/src/main/AndroidManifest.xml"),
+        ).first { it.isFile }.readText()
+        val service = Regex(
+            """<service\s+android:name="\.agent\.runtime\.AgentRuntimeService"[\s\S]*?/>""",
+        ).find(manifest)?.value
+
+        assertTrue(service?.contains("android:permission=\"$AGENT_RUNTIME_BIND_PERMISSION\"") == true)
+        assertTrue(
+            manifest.contains(
+                """<permission
+        android:name="$AGENT_RUNTIME_BIND_PERMISSION"
+        android:protectionLevel="signature" />""",
+            ),
+        )
+        assertTrue(manifest.contains("""<uses-permission android:name="$AGENT_RUNTIME_BIND_PERMISSION" />"""))
     }
 }

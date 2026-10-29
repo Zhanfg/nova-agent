@@ -3,6 +3,7 @@ package fuck.andes.agent.runtime
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Handler
@@ -41,7 +42,6 @@ import fuck.andes.agent.overlay.AgentOverlayVisibilityPolicy
 import fuck.andes.agent.overlay.applyEvent
 import fuck.andes.config.Prefs
 import fuck.andes.core.AndroidAgentLogger
-import fuck.andes.core.ModuleConfig
 import fuck.andes.core.safeLogType
 import kotlin.concurrent.thread
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
@@ -68,10 +68,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val callerPolicy = AgentRuntimeCallerPolicy(
         myUid = Process.myUid(),
     ) { callingUid ->
-        val packages = runCatching {
-            packageManager.getPackagesForUid(callingUid)
-        }.getOrNull().orEmpty()
-        packages.any { it in ModuleConfig.AGENT_RUNTIME_ENTRY_PACKAGES }
+        // checkSignatures 比较这个 UID 里全部分包的证书。同名包、共享 UID 中的一个包名、
+        // 其他用户里的同名包都不能单独通过。
+        val signature = runCatching {
+            packageManager.checkSignatures(Process.myUid(), callingUid)
+        }.getOrDefault(PackageManager.SIGNATURE_NO_MATCH)
+        runtimeCallerSignatureMatches(signature)
     }
     private val exposedBinder = AgentRuntimeCallerBinder(
         delegate = serviceMessenger.binder,
