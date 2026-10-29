@@ -3,4 +3,6 @@
     <string name="xposed_description">Nova：面向 Android 的系统级自主 AI Agent，支持接管小布助手，并解锁 Gemini 与一圈即搜</string>
     <string name="agent_accessibility_label">Nova 设备控制</string>
     <string name="agent_accessibility_description">用于 Agent 操作设备，允许 Nova 读取屏幕内容并执行点击、滑动、文本输入和系统动作。</string>
+    <string name="perm_bind_agent_runtime_label">绑定 Nova Agent Runtime</string>
+    <string name="perm_bind_agent_runtime_description">只允许与 Nova 使用同一签名证书的应用，或签名证书摘要已列入已知签名者的进程绑定 Agent Runtime。只匹配包名不能获得该权限。</string>
 </resources>

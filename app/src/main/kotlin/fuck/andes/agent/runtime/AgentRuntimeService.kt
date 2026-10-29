@@ -1,8 +1,10 @@
 package fuck.andes.agent.runtime
 
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Handler
@@ -39,10 +41,12 @@ import fuck.andes.agent.overlay.AgentOverlayPhase
 import fuck.andes.agent.overlay.AgentOverlayState
 import fuck.andes.agent.overlay.AgentOverlayVisibilityPolicy
 import fuck.andes.agent.overlay.applyEvent
+import fuck.andes.agent.tool.ToolExecutionDecision
 import fuck.andes.config.Prefs
 import fuck.andes.core.AndroidAgentLogger
-import fuck.andes.core.ModuleConfig
 import fuck.andes.core.safeLogType
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -65,6 +69,21 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceMessenger = Messenger(IncomingHandler())
+    private val incomingCallers = ConcurrentHashMap<Int, AgentRuntimeCallerSnapshot>()
+    private val callerPolicyGeneration = AtomicLong(0)
+    private val packageIdentities by lazy {
+        AgentRuntimePackageIdentityResolver(packageManager)
+    }
+    private val transactionGuard by lazy {
+        AgentRuntimeTransactionGuard(serviceMessenger.binder, ::authorizeTransaction)
+    }
+    private var callerRevocationRegistered = false
+
+    @Volatile
+    private var activeCaller: AgentRuntimeCallerSnapshot? = null
+
+    @Volatile
+    private var activeCallerPolicyGeneration = 0L
 
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
@@ -77,11 +96,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val generation: Long,
         val incoming: AgentRuntimeWire.IncomingRunRequest,
         val replyTo: Messenger?,
+        val caller: AgentRuntimeCallerSnapshot,
     )
 
     private data class QueuedRun(
         val request: AgentRuntimeWire.RunRequest,
         val replyTo: Messenger?,
+        val caller: AgentRuntimeCallerSnapshot,
     )
 
     private val runQueue = ArrayDeque<QueuedRun>()
@@ -113,11 +134,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        registerCallerRevocationReceiver()
     }
 
     override fun onBind(intent: Intent): IBinder? {
         if (intent.action != AgentRuntimeWire.ACTION_BIND) return null
-        return serviceMessenger.binder
+        // 不记录调用方。句柄可以转交，每一次 transact 由 AgentRuntimeTransactionGuard 重新鉴权。
+        return transactionGuard
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -137,6 +160,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onDestroy() {
+        unregisterCallerRevocationReceiver()
+        incomingCallers.clear()
+        activeCaller = null
         startRequestGeneration++
         pendingStartRequests.drain().forEach { pending ->
             pending.incoming.close()
@@ -183,8 +209,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private inner class IncomingHandler : Handler(Looper.getMainLooper()) {
+        override fun sendMessageAtTime(msg: Message, uptimeMillis: Long): Boolean {
+            val captured = AgentRuntimeBinderCall.captured.get()
+            val key = System.identityHashCode(msg)
+            if (captured != null) incomingCallers[key] = captured
+            val queued = super.sendMessageAtTime(msg, uptimeMillis)
+            if (!queued) incomingCallers.remove(key)
+            return queued
+        }
+
         override fun handleMessage(msg: Message) {
-            if (!isMessageSenderAllowed(msg)) {
+            val caller = callerFromIncomingMessage(msg)
+            if (caller == null || !acceptIncomingCaller(caller)) {
                 if (msg.what == AgentRuntimeWire.MSG_START_RUN) {
                     AgentRuntimeWire.closeImageDescriptors(msg.data)
                 }
@@ -212,7 +248,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         finishWithFailure("Agent Runtime 请求缺少 runId 或用户输入", msg.replyTo)
                         return
                     }
-                    ingestRunRequest(incoming, msg.replyTo)
+                    ingestRunRequest(incoming, msg.replyTo, caller)
                 }
 
                 AgentRuntimeWire.MSG_CANCEL -> {
@@ -250,6 +286,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun ingestRunRequest(
         incoming: AgentRuntimeWire.IncomingRunRequest,
         replyTo: Messenger?,
+        caller: AgentRuntimeCallerSnapshot,
     ) {
         val runId = incoming.request.runId
         if (
@@ -281,6 +318,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             generation = startRequestGeneration,
             incoming = incoming,
             replyTo = replyTo,
+            caller = caller,
         )
         when (val submit = pendingStartRequests.submit(pending)) {
             AgentSerialIngestQueue.SubmitResult.StartNow -> {
@@ -336,9 +374,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                             config = AgentRuntimePolicy.constrain(request.config, permissions),
                         )
                         if (shouldQueueNewRun()) {
-                            enqueueOrReject(constrained, replyTo)
+                            enqueueOrReject(constrained, replyTo, pending.caller)
                         } else {
-                            startRun(constrained, replyTo)
+                            startRun(constrained, replyTo, pending.caller)
                         }
                     },
                     onFailure = { throwable ->
@@ -381,7 +419,22 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun startRun(
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
+        caller: AgentRuntimeCallerSnapshot,
     ) {
+        val decision = evaluateCaller(caller.uid, caller.pid)
+        if (!decision.allowed) {
+            AndroidAgentLogger.warn(
+                "Agent runtime run rejected: runId=${request.runId} ${decision.auditLine()}"
+            )
+            sendResultTo(replyTo, stoppedResult(request.runId, "调用方身份已失效"))
+            mainHandler.post { startNextQueuedRunIfIdle() }
+            return
+        }
+        AndroidAgentLogger.info(
+            "Agent runtime run accepted: runId=${request.runId} ${decision.auditLine()}"
+        )
+        activeCaller = caller
+        activeCallerPolicyGeneration = callerPolicyGeneration.get()
         activeSession?.cancel("已被新的 Agent 任务替换")
         val session = AgentRuntimeSession(
             runId = request.runId,
@@ -431,6 +484,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     handleAcceptedRunEvent(session, event, entrySurfaceGuard)
                 },
                 persistArtifacts = ::persistRunArtifacts,
+                authorizeTool = ::authorizeActiveCallerTool,
             ).execute(session, request)
             if (!outcome.shouldUpdateHost) return
             postTerminalOverlay(
@@ -460,6 +514,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun enqueueOrReject(
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger?,
+        caller: AgentRuntimeCallerSnapshot,
     ) {
         if (runQueue.size >= maxRunQueueSize) {
             sendResultTo(
@@ -473,7 +528,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
             return
         }
-        runQueue.addLast(QueuedRun(request, replyTo))
+        runQueue.addLast(QueuedRun(request, replyTo, caller))
         sendEventTo(replyTo, AgentEvent.RunQueued(runId = request.runId, queueSize = runQueue.size))
         AndroidAgentLogger.info("Agent run queued: runId=${request.runId}, queueSize=${runQueue.size}")
     }
@@ -489,8 +544,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 next.replyTo,
                 AgentEvent.RunQueueStarted(runId = next.request.runId, queueSize = runQueue.size),
             )
-            startRun(next.request, next.replyTo)
+            startRun(next.request, next.replyTo, next.caller)
         }
+    }
+
+    private fun startNextQueuedRunIfIdle() {
+        if (activeSession?.isTerminal == false) return
+        val next = runQueue.removeFirstOrNull() ?: return
+        sendEventTo(
+            next.replyTo,
+            AgentEvent.RunQueueStarted(runId = next.request.runId, queueSize = runQueue.size),
+        )
+        startRun(next.request, next.replyTo, next.caller)
     }
 
     private fun handleAcceptedRunEvent(
@@ -843,7 +908,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             response = completed.response,
             supplement = supplementText,
         )
-        startRun(continuationRequest)
+        // 浮层补充发生在模块进程内，没有新的 Binder 调用方；按本进程 UID 重新裁决。
+        startRun(
+            continuationRequest,
+            caller = AgentRuntimeCallerSnapshot(
+                uid = Process.myUid(),
+                pid = Process.myPid(),
+            ),
+        )
     }
 
     private fun recordSupplementEvent(text: String): AgentEvent.UserSupplementReceived {
@@ -1158,14 +1230,146 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         stopSelf()
     }
 
-    private fun isMessageSenderAllowed(msg: Message): Boolean {
+    private fun callerFromIncomingMessage(msg: Message): AgentRuntimeCallerSnapshot? {
+        val attached = incomingCallers.remove(System.identityHashCode(msg))
         val uid = msg.sendingUid
-        if (uid == Process.myUid()) return true
-        val packages = runCatching {
-            packageManager.getPackagesForUid(uid)
-        }.getOrNull().orEmpty()
-        return packages.any { it in ModuleConfig.AGENT_RUNTIME_ENTRY_PACKAGES }
+        if (attached != null && attached.uid != uid) {
+            AndroidAgentLogger.warn(
+                "Agent runtime rejected message: sendingUid=$uid transactionUid=${attached.uid}"
+            )
+            return null
+        }
+        return AgentRuntimeCallerSnapshot(uid = uid, pid = attached?.pid ?: -1)
     }
+
+    private fun acceptIncomingCaller(caller: AgentRuntimeCallerSnapshot): Boolean {
+        val decision = evaluateCaller(caller.uid, caller.pid)
+        if (decision.allowed) return true
+        AndroidAgentLogger.warn("Agent runtime message rejected: ${decision.auditLine()}")
+        return false
+    }
+
+    private fun authorizeTransaction(caller: AgentRuntimeCallerSnapshot): Boolean {
+        val decision = evaluateCaller(caller.uid, caller.pid)
+        if (decision.allowed) {
+            AndroidAgentLogger.info("Agent runtime binder accepted: ${decision.auditLine()}")
+        } else {
+            AndroidAgentLogger.warn("Agent runtime binder rejected: ${decision.auditLine()}")
+        }
+        return decision.allowed
+    }
+
+    private fun evaluateCaller(uid: Int, pid: Int): CallerDecision =
+        AgentRuntimeCallerPolicy.decide(
+            callingUid = uid,
+            callingPid = pid,
+            selfUid = Process.myUid(),
+            modulePackage = AgentRuntimeCallerAllowlist.MODULE_PACKAGE,
+            packages = packageIdentities.resolve(uid),
+            pins = AgentRuntimeCallerAllowlist.pins,
+        )
+
+    private fun authorizeActiveCallerTool(toolName: String): ToolExecutionDecision {
+        val caller = activeCaller
+        val generation = activeCallerPolicyGeneration
+        if (caller == null || generation != callerPolicyGeneration.get()) {
+            AndroidAgentLogger.warn(
+                "Agent runtime tool rejected: runId=${activeSession?.runId} tool=$toolName reason=caller_revoked"
+            )
+            return ToolExecutionDecision.Reject(
+                code = "CALLER_REVOKED",
+                message = "调用方身份已失效，工具未执行",
+            )
+        }
+        val decision = evaluateCaller(caller.uid, caller.pid)
+        if (!decision.allowed || callerPolicyGeneration.get() != generation) {
+            AndroidAgentLogger.warn(
+                "Agent runtime tool rejected: runId=${activeSession?.runId} tool=$toolName ${decision.auditLine()}"
+            )
+            return ToolExecutionDecision.Reject(
+                code = "CALLER_REVOKED",
+                message = "调用方身份已失效，工具未执行",
+            )
+        }
+        if (toolName in AgentRuntimeCallerPolicy.HIGH_RISK_TOOLS) {
+            AndroidAgentLogger.info(
+                "Agent runtime high-risk tool: runId=${activeSession?.runId} tool=$toolName ${decision.auditLine()}"
+            )
+        }
+        return ToolExecutionDecision.Allow
+    }
+
+    private fun registerCallerRevocationReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        runCatching {
+            registerReceiver(callerRevocationReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            callerRevocationRegistered = true
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warn(
+                "Agent runtime caller revocation receiver failed: type=${throwable.safeLogType()}"
+            )
+        }
+    }
+
+    private fun unregisterCallerRevocationReceiver() {
+        if (!callerRevocationRegistered) return
+        callerRevocationRegistered = false
+        runCatching { unregisterReceiver(callerRevocationReceiver) }
+    }
+
+    private val callerRevocationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val packageName = intent.data?.schemeSpecificPart ?: return
+            if (
+                !AgentRuntimeCallerPolicy.isRevocationPackage(
+                    packageName = packageName,
+                    pins = AgentRuntimeCallerAllowlist.pins,
+                    modulePackage = AgentRuntimeCallerAllowlist.MODULE_PACKAGE,
+                )
+            ) {
+                return
+            }
+            if (
+                intent.action == Intent.ACTION_PACKAGE_REMOVED &&
+                intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+            ) {
+                return
+            }
+            revokeTrustedCallerSessions(packageName)
+        }
+    }
+
+    private fun revokeTrustedCallerSessions(packageName: String) {
+        callerPolicyGeneration.incrementAndGet()
+        startRequestGeneration++
+        val reason = "调用方安装状态已变化，Agent Runtime 会话已失效"
+        AndroidAgentLogger.warn("Agent runtime caller sessions revoked: package=$packageName")
+        pendingStartRequests.drain().forEach { pending ->
+            pending.incoming.close()
+            sendRequestIngestedTo(pending.replyTo, pending.incoming.request.runId)
+            sendResultTo(pending.replyTo, stoppedResult(pending.incoming.request.runId, reason))
+        }
+        AgentRunQueuePolicy.drain(runQueue).forEach { queued ->
+            sendResultTo(queued.replyTo, stoppedResult(queued.request.runId, reason))
+        }
+        val session = activeSession
+        activeCaller = null
+        if (session != null && session.cancel(reason)) {
+            state.value = state.value.copy(statusText = "正在停止")
+        }
+    }
+
+    private fun stoppedResult(runId: String, reason: String): AgentRuntimeWire.RunResult =
+        AgentRuntimeWire.RunResult(
+            runId = runId,
+            ok = false,
+            content = "",
+            error = reason,
+        )
 
     private fun isNightMode(): Boolean {
         val mode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK

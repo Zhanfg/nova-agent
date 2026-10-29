@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      PLACEHOLDER: 这些不是 HeyTap 或小米的真实签名证书。
+      与 AgentRuntimeCallerAllowlist 中的常量保持完全一致。
+      替换为 apksigner verify print-certs 输出的 Signer #1 certificate SHA-256 digest，
+      小写且不含冒号。未替换前，knownSigner 不会把 BIND_AGENT_RUNTIME 授给小布或小爱。
+    -->
+    <string-array name="agent_runtime_known_signers">
+        <item>eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0001</item>
+        <item>eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0002</item>
+    </string-array>
+</resources>

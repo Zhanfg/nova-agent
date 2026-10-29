@@ -36,6 +36,9 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
     ) -> Unit,
+    private val authorizeTool: (String) -> ToolExecutionDecision = {
+        ToolExecutionDecision.Allow
+    },
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -118,7 +121,12 @@ internal class AgentRuntimeRunExecutor(
                 screenshotExcludedPackages = {
                     entrySurfaceGuard?.consumeScreenshotExcludedPackages().orEmpty()
                 },
-                beforeToolExecution = { toolName ->
+                beforeToolExecution = beforeTool@{ toolName ->
+                    when (val callerDecision = authorizeTool(toolName)) {
+                        ToolExecutionDecision.Allow -> Unit
+                        is ToolExecutionDecision.Reject ->
+                            return@beforeTool callerDecision
+                    }
                     val requiresAccessibility =
                         AgentOverlayVisibilityPolicy.isForegroundOperationTool(toolName)
                     if (

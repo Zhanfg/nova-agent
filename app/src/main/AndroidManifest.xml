@@ -23,7 +23,15 @@
         android:name="fuck.andes.permission.CONTROL_ACCESSIBILITY_PROTECTION"
         android:protectionLevel="signature" />
 
+    <permission
+        android:name="fuck.andes.permission.BIND_AGENT_RUNTIME"
+        android:label="@string/perm_bind_agent_runtime_label"
+        android:description="@string/perm_bind_agent_runtime_description"
+        android:protectionLevel="signature|knownSigner"
+        android:knownCerts="@array/agent_runtime_known_signers" />
+
     <uses-permission android:name="fuck.andes.permission.CONTROL_ACCESSIBILITY_PROTECTION" />
+    <uses-permission android:name="fuck.andes.permission.BIND_AGENT_RUNTIME" />
 
     <queries>
         <package android:name="com.google.android.googlequicksearchbox" />
@@ -59,7 +67,7 @@
         <service
             android:name=".agent.runtime.AgentRuntimeService"
             android:exported="true"
-            tools:ignore="ExportedService" />
+            android:permission="fuck.andes.permission.BIND_AGENT_RUNTIME" />
 
         <service
             android:name=".agent.accessibility.AgentAccessibilityService"
