@@ -65,6 +65,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceMessenger = Messenger(IncomingHandler())
+    private val callerPolicy = AgentRuntimeCallerPolicy(
+        myUid = Process.myUid(),
+    ) { callingUid ->
+        val packages = runCatching {
+            packageManager.getPackagesForUid(callingUid)
+        }.getOrNull().orEmpty()
+        packages.any { it in ModuleConfig.AGENT_RUNTIME_ENTRY_PACKAGES }
+    }
+    private val exposedBinder = AgentRuntimeCallerBinder(
+        delegate = serviceMessenger.binder,
+        isUidAllowed = callerPolicy::isAllowed,
+    )
 
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
@@ -117,7 +129,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onBind(intent: Intent): IBinder? {
         if (intent.action != AgentRuntimeWire.ACTION_BIND) return null
-        return serviceMessenger.binder
+        // 不在 bind 时读取或保存调用者 UID。同一个 binder 被转交后，下一次 transaction
+        // 必须重新看 Binder.getCallingUid()。
+        return exposedBinder
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -1159,12 +1173,9 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun isMessageSenderAllowed(msg: Message): Boolean {
-        val uid = msg.sendingUid
-        if (uid == Process.myUid()) return true
-        val packages = runCatching {
-            packageManager.getPackagesForUid(uid)
-        }.getOrNull().orEmpty()
-        return packages.any { it in ModuleConfig.AGENT_RUNTIME_ENTRY_PACKAGES }
+        // Messenger 在本次 transaction 内把 Binder.getCallingUid() 写入 sendingUid。
+        // handleMessage 已经离开 transaction，这里再读 getCallingUid() 只会得到本进程。
+        return callerPolicy.isAllowed(msg.sendingUid)
     }
 
     private fun isNightMode(): Boolean {
