@@ -77,6 +77,7 @@ internal class AgentLocalTools(
     private val skillResourceReader: SkillResourceReader? = null,
     private val githubSkillSource: PublicGitHubSkillSource? = null,
     private val skillPackageInstaller: SkillPackageInstaller? = null,
+    private val githubSkillInstallApproved: () -> Boolean = { false },
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
@@ -990,6 +991,12 @@ internal class AgentLocalTools(
     }
 
     private fun skillsInstallFromGitHub(args: JSONObject): String {
+        if (!githubSkillInstallApproved()) {
+            return errorResult(
+                "SKILL_INSTALL_APPROVAL_REQUIRED",
+                "模型不能安装或启用 GitHub Skill。需要用户在模型之外批准具体仓库、commit 和路径；本次没有下载，也没有写入或启用。",
+            )
+        }
         val replaceExisting = args.optBoolean("replaceExisting", false)
         return skillSourceResult {
             val requestedRepository = GitHubSkillRepositoryParser.resolve(

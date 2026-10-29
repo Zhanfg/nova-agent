@@ -154,6 +154,7 @@ internal class AgentRuntimeRunExecutor(
                 skillResourceReader = skillResourceReader,
                 githubSkillSource = githubSkillSource,
                 skillPackageInstaller = skillPackageInstaller,
+                githubSkillInstallApproved = { false },
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
             )
