@@ -8,7 +8,6 @@ internal object ModuleConfig {
     const val BREENO_PACKAGE = "com.heytap.speechassist"
     const val XIAOAI_PACKAGE = "com.miui.voiceassist"
     const val XIAOAI_CORE_PROCESS = "$XIAOAI_PACKAGE:core"
-    val AGENT_RUNTIME_ENTRY_PACKAGES = setOf(BREENO_PACKAGE, XIAOAI_PACKAGE)
     const val GOOGLE_ASSISTANT_COMPONENT =
         "com.google.android.googlequicksearchbox/com.google.android.voiceinteraction.GsaVoiceInteractionService"
     const val ASSISTANT_ROLE = "android.app.role.ASSISTANT"

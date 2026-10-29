@@ -49,6 +49,7 @@ class AgentPromptBuilderTest {
         assertTrue(messages.systemContents().any { it.contains("主动使用它们定位并只读检查") })
         assertTrue(messages.systemContents().any { it.contains("相关应用私有文件与数据库") })
         assertTrue(messages.systemContents().any { it.contains("执行有界查询，不修改源数据") })
+        assertTrue(messages.getJSONObject(2).getString("content").contains("TERMINAL_CALL_NOT_CONFIRMED"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("open_and_exec"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("同一轮模型回复最多调用一次 read_image"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("再在下一轮调用下一张"))

@@ -55,6 +55,7 @@ internal class AgentLocalTools(
     private val terminalToolsEnabled: () -> Boolean = {
         Prefs.isEnabled(Prefs.Keys.AGENT_TERMINAL_TOOLS)
     },
+    private val terminalCallConfirmed: (toolName: String) -> Boolean = { _ -> false },
     private val deviceDirectToolsEnabled: () -> Boolean = {
         Prefs.isEnabled(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS)
     },
@@ -76,6 +77,7 @@ internal class AgentLocalTools(
     private val skillResourceReader: SkillResourceReader? = null,
     private val githubSkillSource: PublicGitHubSkillSource? = null,
     private val skillPackageInstaller: SkillPackageInstaller? = null,
+    private val githubSkillInstallApproved: () -> Boolean = { false },
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
@@ -177,12 +179,12 @@ internal class AgentLocalTools(
                 in DEVICE_TOOL_NAMES ->
                     structuredDeviceTools.execute(toolCall.name, args)
                         ?: textResult(errorResult("UNKNOWN_TOOL", "未知设备工具"))
-                "read_image" -> fileVisionTool { imageTools.readImage(args) }
-                "terminal" -> textResult(terminalTool { terminal(args) })
-                "run_command" -> textResult(terminalTool { runCommand(args) })
-                "read_file" -> textResult(terminalTool { readFile(args) })
-                "write_file" -> textResult(terminalTool { writeFile(args) })
-                "list_directory" -> textResult(terminalTool { listDirectory(args) })
+                "read_image" -> fileVisionTool("read_image") { imageTools.readImage(args) }
+                "terminal" -> textResult(terminalTool("terminal") { terminal(args) })
+                "run_command" -> textResult(terminalTool("run_command") { runCommand(args) })
+                "read_file" -> textResult(terminalTool("read_file") { readFile(args) })
+                "write_file" -> textResult(terminalTool("write_file") { writeFile(args) })
+                "list_directory" -> textResult(terminalTool("list_directory") { listDirectory(args) })
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))
@@ -236,19 +238,33 @@ internal class AgentLocalTools(
         )
     }
 
-    private fun terminalTool(block: () -> String): String {
+    private fun terminalTool(toolName: String, block: () -> String): String {
         if (!terminalToolsEnabled()) {
             return errorResult("TERMINAL_TOOLS_DISABLED", "请先启用终端/文件工具")
+        }
+        if (!terminalCallConfirmed(toolName)) {
+            return terminalCallRejected()
         }
         return block()
     }
 
-    private fun fileVisionTool(block: () -> AgentModelClient.ToolResult): AgentModelClient.ToolResult {
+    private fun fileVisionTool(
+        toolName: String,
+        block: () -> AgentModelClient.ToolResult,
+    ): AgentModelClient.ToolResult {
         if (!terminalToolsEnabled()) {
             return textResult(errorResult("TERMINAL_TOOLS_DISABLED", "请先启用终端/文件工具"))
         }
+        if (!terminalCallConfirmed(toolName)) {
+            return textResult(terminalCallRejected())
+        }
         return block()
     }
+
+    private fun terminalCallRejected(): String = errorResult(
+        "TERMINAL_CALL_NOT_CONFIRMED",
+        "终端、Root shell 和文件读写需要用户对这一次调用的明确确认；设置开关不能授权本次执行，命令未执行",
+    )
 
     private fun memoryToolPermissionError(toolName: String): AgentModelClient.ToolResult? {
         if (toolName !in MEMORY_TOOL_NAMES || memoryToolsEnabled()) return null
@@ -975,6 +991,12 @@ internal class AgentLocalTools(
     }
 
     private fun skillsInstallFromGitHub(args: JSONObject): String {
+        if (!githubSkillInstallApproved()) {
+            return errorResult(
+                "SKILL_INSTALL_APPROVAL_REQUIRED",
+                "模型不能安装或启用 GitHub Skill。需要用户在模型之外批准具体仓库、commit 和路径；本次没有下载，也没有写入或启用。",
+            )
+        }
         val replaceExisting = args.optBoolean("replaceExisting", false)
         return skillSourceResult {
             val requestedRepository = GitHubSkillRepositoryParser.resolve(

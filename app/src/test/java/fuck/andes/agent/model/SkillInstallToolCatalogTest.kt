@@ -66,7 +66,8 @@ class SkillInstallToolCatalogTest {
         assertEquals(500, properties.getJSONObject("expectedReplacementId").getInt("maxLength"))
         assertTrue("repository" in parameters.requiredNames())
         assertTrue("paths" in parameters.requiredNames())
-        assertTrue(function.getString("description").contains("next turn"))
+        assertTrue(function.getString("description").contains("SKILL_INSTALL_APPROVAL_REQUIRED"))
+        assertFalse(function.getString("description").contains("next turn"))
     }
 
     private fun JSONArray.toolNames(): Set<String> =

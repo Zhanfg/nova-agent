@@ -104,12 +104,36 @@ class AgentLocalSkillInstallAuthorizationTest {
         tools.close()
     }
 
+    @Test
+    fun modelInstallIsRejectedWithoutHostApproval() {
+        val tools = tools(approved = false)
+
+        val result = tools.execute(
+            installCall(replaceExisting = false).let { call ->
+                call.copy(
+                    argumentsJson = JSONObject(call.argumentsJson)
+                        .put("approved", true)
+                        .put("userApproved", true)
+                        .toString(),
+                )
+            },
+        )
+
+        assertEquals(
+            "SKILL_INSTALL_APPROVAL_REQUIRED",
+            JSONObject(result.content).getString("code"),
+        )
+        tools.close()
+    }
+
     private fun tools(
         pending: PendingSkillConflictCapability? = null,
+        approved: Boolean = true,
     ): AgentLocalTools = AgentLocalTools(
         context = RuntimeEnvironment.getApplication() as Context,
         logger = NoOpLogger,
         pendingSkillConflict = pending,
+        githubSkillInstallApproved = { approved },
     )
 
     private fun installCall(

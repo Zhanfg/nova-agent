@@ -101,6 +101,8 @@ internal class AgentRuntimeRunExecutor(
                 terminalToolsEnabled = {
                     request.config.terminalTools && currentPermissions().terminalTools
                 },
+                // 设置里的持久开关不能代替逐次确认。当前没有确认通道，终端调用失败关闭。
+                terminalCallConfirmed = { _ -> false },
                 deviceDirectToolsEnabled = {
                     request.config.deviceDirectTools && currentPermissions().deviceDirectTools
                 },
@@ -152,6 +154,7 @@ internal class AgentRuntimeRunExecutor(
                 skillResourceReader = skillResourceReader,
                 githubSkillSource = githubSkillSource,
                 skillPackageInstaller = skillPackageInstaller,
+                githubSkillInstallApproved = { false },
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
             )

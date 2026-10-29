@@ -62,6 +62,7 @@ class AgentLocalSkillInstallIntegrationTest {
             logger = NoOpLogger,
             githubSkillSource = source,
             skillPackageInstaller = SkillPackageInstaller(skillsRoot, indexService),
+            githubSkillInstallApproved = { true },
             skillIndexService = indexService,
             skillLoader = SkillLoader(skillsRoot),
             skillResourceReader = SkillResourceReader(skillsRoot),
@@ -212,6 +213,7 @@ class AgentLocalSkillInstallIntegrationTest {
             logger = NoOpLogger,
             githubSkillSource = source,
             skillPackageInstaller = SkillPackageInstaller(skillsRoot, indexService),
+            githubSkillInstallApproved = { true },
             skillIndexService = indexService,
             skillLoader = SkillLoader(skillsRoot),
             skillResourceReader = SkillResourceReader(skillsRoot),
@@ -319,6 +321,7 @@ class AgentLocalSkillInstallIntegrationTest {
             logger = NoOpLogger,
             githubSkillSource = source,
             skillPackageInstaller = failingInstaller,
+            githubSkillInstallApproved = { true },
             skillIndexService = indexService,
             skillLoader = SkillLoader(skillsRoot),
             skillResourceReader = SkillResourceReader(skillsRoot),
@@ -373,6 +376,65 @@ class AgentLocalSkillInstallIntegrationTest {
                 JSONObject(tools.execute(call).content).getString("code"),
             )
         }
+        tools.close()
+    }
+
+    @Test
+    fun modelInstallDoesNotDownloadOrEnableWithoutHostApproval() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val skillsRoot = temporaryFolder.newFolder("unapproved-skills")
+        val indexService = SkillIndexService(context, skillsRoot)
+        val requestedUrls = mutableListOf<String>()
+        val tools = AgentLocalTools(
+            context = context,
+            logger = NoOpLogger,
+            githubSkillSource = PublicGitHubSkillSource(
+                cacheRoot = temporaryFolder.newFolder("unapproved-cache"),
+                baseClient = githubClient(requestedUrls),
+            ),
+            skillPackageInstaller = SkillPackageInstaller(skillsRoot, indexService),
+            skillIndexService = indexService,
+            skillLoader = SkillLoader(skillsRoot),
+        )
+
+        val inspection = JSONObject(
+            tools.execute(
+                AgentModelClient.ToolCall(
+                    id = "inspect-unapproved",
+                    name = "skills_inspect_github",
+                    argumentsJson = JSONObject()
+                        .put("repository", "example/skills")
+                        .put("ref", "main")
+                        .toString(),
+                ),
+            ).content,
+        )
+        assertTrue(inspection.toString(), inspection.getBoolean("ok"))
+
+        val install = JSONObject(
+            tools.execute(
+                AgentModelClient.ToolCall(
+                    id = "install-unapproved",
+                    name = "skills_install_from_github",
+                    argumentsJson = JSONObject()
+                        .put("repository", "example/skills")
+                        .put("ref", "main")
+                        .put("paths", JSONArray().put("skills/demo"))
+                        .put("replaceExisting", false)
+                        .put("approved", true)
+                        .put("userApproved", true)
+                        .toString(),
+                ),
+            ).content,
+        )
+
+        assertEquals("SKILL_INSTALL_APPROVAL_REQUIRED", install.getString("code"))
+        assertFalse(requestedUrls.any { "codeload.github.com" in it })
+        assertFalse(File(skillsRoot, "demo-skill").exists())
+        assertFalse(
+            indexService.listSkillsForManagement(forceRefresh = true)
+                .any { it.id == "demo-skill" && it.enabled },
+        )
         tools.close()
     }
 
