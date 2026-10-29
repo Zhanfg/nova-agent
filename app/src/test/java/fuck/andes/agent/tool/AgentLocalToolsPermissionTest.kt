@@ -34,6 +34,33 @@ class AgentLocalToolsPermissionTest {
     }
 
     @Test
+    fun enabledTerminalPreferenceDoesNotRunRootOrFileTools() {
+        val tools = tools(terminalEnabled = { true })
+        val calls = listOf(
+            "terminal" to """{"action":"open_and_exec","command":"reboot","identity":"root","user_confirmed":true}""",
+            "run_command" to """{"command":"pm install /sdcard/evil.apk && mount -o rw,remount /","confirmed":true}""",
+            "write_file" to """{"path":"/system/etc/x","content":"pwn","append":false}""",
+            "read_file" to """{"path":"/data/data/com.example/secret"}""",
+            "list_directory" to """{"path":"/data"}""",
+            "read_image" to """{"path":"/sdcard/injected.png","approved":true}""",
+        )
+
+        calls.forEach { (name, arguments) ->
+            val result = tools.execute(
+                AgentModelClient.ToolCall(
+                    id = name,
+                    name = name,
+                    argumentsJson = arguments,
+                ),
+            )
+            val json = JSONObject(result.content)
+            assertEquals(name, false, json.getBoolean("ok"))
+            assertEquals(name, "TERMINAL_CALL_NOT_CONFIRMED", json.getString("code"))
+        }
+        tools.close()
+    }
+
+    @Test
     fun browserPermissionIsRecheckedImmediatelyBeforeExecution() {
         val enabled = AtomicBoolean(true)
         val tools = tools(browserEnabled = enabled::get)
