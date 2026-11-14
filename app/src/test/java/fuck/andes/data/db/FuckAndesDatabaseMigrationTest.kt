@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class FuckAndesDatabaseMigrationTest {
     @Test
-    fun migration6To11PreservesDataAndMigratesReasoningEffort() {
+    fun migration6To12PreservesDataMigratesReasoningEffortAndAddsWorkspaceBinding() {
         val context = RuntimeEnvironment.getApplication() as Context
         val databaseName = "migration-${UUID.randomUUID()}.db"
         createVersion6Database(context, databaseName)
@@ -32,6 +32,7 @@ class FuckAndesDatabaseMigrationTest {
                 FuckAndesDatabase.MIGRATION_8_9,
                 FuckAndesDatabase.MIGRATION_9_10,
                 FuckAndesDatabase.MIGRATION_10_11,
+                FuckAndesDatabase.MIGRATION_11_12,
             )
             .build()
         try {
@@ -57,6 +58,7 @@ class FuckAndesDatabaseMigrationTest {
                 conversations.mapTo(mutableSetOf()) { it.id },
             )
             assertEquals("[]", conversations.first { it.id == "conv-1" }.appliedRuntimeRunIdsJson)
+            assertEquals(null, conversations.first { it.id == "conv-1" }.workspaceId)
             assertEquals("off", conversations.first { it.id == "conv-1" }.reasoningEffort)
             assertEquals("default", conversations.first { it.id == "conv-enabled" }.reasoningEffort)
             assertEquals(null, runBlocking(Dispatchers.IO) { database.conversationDao().state() })

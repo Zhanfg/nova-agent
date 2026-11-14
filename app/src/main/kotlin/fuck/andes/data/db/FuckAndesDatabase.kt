@@ -19,7 +19,7 @@ import androidx.room.migration.Migration
         RuntimeArchiveEventEntity::class,
         SkillRegistryEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 internal abstract class FuckAndesDatabase : RoomDatabase() {
@@ -39,7 +39,7 @@ internal abstract class FuckAndesDatabase : RoomDatabase() {
                     FuckAndesDatabase::class.java,
                     "fuck_andes.db",
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { instance = it }
@@ -113,6 +113,10 @@ internal abstract class FuckAndesDatabase : RoomDatabase() {
             database.execSQL(
                 "ALTER TABLE provider_models ADD COLUMN vision_verified INTEGER"
             )
+        }
+
+        internal val MIGRATION_11_12 = Migration(11, 12) { database ->
+            database.execSQL("ALTER TABLE conversations ADD COLUMN workspace_id TEXT")
         }
     }
 }

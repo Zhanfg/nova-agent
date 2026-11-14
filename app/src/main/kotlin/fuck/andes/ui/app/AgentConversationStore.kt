@@ -69,6 +69,7 @@ internal object AgentConversationStore {
                         title = titles[id] ?: "新对话",
                         thinkingEnabled = state.reasoningEffort.enablesReasoning,
                         reasoningEffort = state.reasoningEffort.wireValue,
+                        workspaceId = state.workspaceId,
                         historyJson = json.encodeToString(state.history),
                         appliedRuntimeRunIdsJson = json.encodeToString(state.appliedRuntimeRunIds),
                         createdAt = updatedAt[id] ?: now,
@@ -123,6 +124,7 @@ internal object AgentConversationStore {
                             .toLegacyHistory()
                     },
                 appliedRuntimeRunIds = conversation.appliedRuntimeRunIdsJson.toStringList(),
+                workspaceId = conversation.workspaceId,
                 input = "",
                 isStreaming = false,
                 thinkingEnabled = conversation.reasoningEffortValue.enablesReasoning,

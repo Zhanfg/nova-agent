@@ -43,10 +43,16 @@ jobs:
             label: 浏览器协议
             patterns: |
               fuck.andes.agent.browser.*
+          - id: mobile-codex
+            label: Mobile Codex 工程核心
+            patterns: |
+              fuck.andes.agent.goal.*
+              fuck.andes.agent.workspace.*
           - id: ui-persistence
             label: UI Room 持久化
             patterns: |
               fuck.andes.ui.app.AgentConversationStoreTest
+              fuck.andes.ui.app.AgentConversationWorkspaceStoreTest
           - id: ui-state
             label: UI 状态与恢复
             patterns: |

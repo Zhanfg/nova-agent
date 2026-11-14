@@ -1,5 +1,7 @@
 package fuck.andes.agent.model
 
+import fuck.andes.agent.goal.AgentGoalSession
+import fuck.andes.agent.goal.AgentGoalToolExecutor
 import fuck.andes.agent.runtime.AgentEvent
 import fuck.andes.agent.runtime.AgentRunCancelledException
 import fuck.andes.agent.runtime.AgentRunController
@@ -126,12 +128,14 @@ internal object AgentModelClient {
                 terminalTools = config.terminalTools
             )
         )
+        val goalSession = AgentGoalSession()
+        val effectiveToolExecutor = AgentGoalToolExecutor(goalSession, toolExecutor)
         val loop = AgentLoop(
             config = config,
             messages = messages,
             tools = tools,
             provider = provider,
-            toolExecutor = toolExecutor,
+            toolExecutor = effectiveToolExecutor,
             runController = runController,
             traceFormatter = traceFormatter,
             onEvent = onEvent,
@@ -139,6 +143,7 @@ internal object AgentModelClient {
             visionRouter = visionConfig
                 ?.takeIf { it.modelSupportsVision && it.baseUrl.isNotBlank() && it.model.isNotBlank() }
                 ?.let { ProviderVisionRouter(it) },
+            goalSession = goalSession,
         )
         val result = try {
             loop.run()

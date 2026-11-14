@@ -14,6 +14,7 @@ internal data class ConversationEntity(
     @ColumnInfo(name = "thinking_enabled") val thinkingEnabled: Boolean,
     @ColumnInfo(name = "reasoning_effort", defaultValue = "'default'")
     val reasoningEffort: String = ReasoningEffort.DEFAULT.wireValue,
+    @ColumnInfo(name = "workspace_id") val workspaceId: String? = null,
     @ColumnInfo(name = "history_json") val historyJson: String = "[]",
     @ColumnInfo(name = "applied_runtime_run_ids_json") val appliedRuntimeRunIdsJson: String = "[]",
     @ColumnInfo(name = "created_at") val createdAt: Long,
