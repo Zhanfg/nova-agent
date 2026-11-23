@@ -1,6 +1,7 @@
 package fuck.andes.agent.runtime
 
 import android.content.Context
+import androidx.room.withTransaction
 import fuck.andes.agent.model.AgentConversationCodec
 import fuck.andes.agent.model.AgentModelClient
 import fuck.andes.data.db.FuckAndesDatabase
@@ -25,16 +26,24 @@ internal object AgentRuntimeResultStore {
     /**
      * 返回 false 表示同一 run 已先收到 ACK，不应在 ACK 之后重新写回待交付队列。
      */
-    fun add(context: Context, completedRun: AgentRuntimeWire.CompletedRun): Boolean {
+    fun add(
+        context: Context,
+        completedRun: AgentRuntimeWire.CompletedRun,
+        archive: AgentRunArchiveStore.ArchivedRun? = null,
+    ): Boolean {
         val appContext = context.applicationContext
         val entity = completedRun.toEntity()
         synchronized(deliveryLock) {
             pruneAcknowledgements(System.currentTimeMillis())
             if (recentlyAcknowledgedRunIds.containsKey(entity.runId)) return false
             runBlocking(Dispatchers.IO) {
-                val dao = FuckAndesDatabase.get(appContext).runtimeRunDao()
-                dao.upsertRuntimeResult(entity)
-                prune(dao)
+                val db = FuckAndesDatabase.get(appContext)
+                db.withTransaction {
+                    val dao = db.runtimeRunDao()
+                    dao.upsertRuntimeResult(entity)
+                    if (archive != null) AgentRunArchiveStore.commitInTransaction(dao, archive)
+                    prune(dao)
+                }
             }
             return true
         }

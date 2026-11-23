@@ -144,7 +144,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        if (activeSession?.isTerminal == false) {
+        if (activeSession?.isFinished == false) {
             AndroidAgentLogger.debug {
                 "Agent runtime client unbound while run is active; detached run continues"
             }
@@ -469,7 +469,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun shouldQueueNewRun(): Boolean =
         AgentRunQueuePolicy.shouldQueue(
-            hasActiveNonTerminalSession = activeSession?.isTerminal == false,
+            hasActiveNonTerminalSession = activeSession?.isFinished == false,
             queuedCount = runQueue.size,
         )
 
@@ -525,7 +525,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.post {
             if (activeSession !== session) return@post
             if (revealsForegroundOperation) hasExecutedForegroundTool = true
-            if (session.isTerminal) return@post
+            if (session.isFinished) return@post
             runCatching {
                 state.value = state.value.applyEvent(event)
                 if (revealsForegroundOperation) {
@@ -550,18 +550,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         result: AgentRuntimeWire.RunResult,
         events: List<AgentEvent>,
     ) {
-        runCatching { persistCompletedRun(request, result) }
-            .onFailure { throwable ->
-                AndroidAgentLogger.error(
-                    "Agent runtime outbox persistence failed: type=${throwable.safeLogType()}"
-                )
-            }
-        runCatching { persistArchivedRun(request, result, events) }
-            .onFailure { throwable ->
-                AndroidAgentLogger.error(
-                    "Agent runtime archive persistence failed: type=${throwable.safeLogType()}"
-                )
-            }
+        val handoff = request.handoff ?: return
+        val createdAt = System.currentTimeMillis()
+        val archive = if (AgentExternalArchivePayload.from(handoff.payload) != null) {
+            AgentRunArchiveStore.ArchivedRun(handoff, events, result, createdAt)
+        } else {
+            null
+        }
+        check(
+            AgentRuntimeResultStore.add(
+                this,
+                AgentRuntimeWire.CompletedRun(handoff, result, createdAt),
+                archive = archive,
+            )
+        ) { "Runtime result was already acknowledged before commit" }
     }
 
     private fun postTerminalOverlay(
@@ -666,39 +668,6 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 "Agent runtime drain results failed: type=${throwable.safeLogType()}"
             }
         }
-    }
-
-    private fun persistCompletedRun(
-        request: AgentRuntimeWire.RunRequest,
-        result: AgentRuntimeWire.RunResult
-    ) {
-        val handoff = request.handoff ?: return
-        AgentRuntimeResultStore.add(
-            this,
-            AgentRuntimeWire.CompletedRun(
-                handoff = handoff,
-                result = result,
-                createdAt = System.currentTimeMillis()
-            )
-        )
-    }
-
-    private fun persistArchivedRun(
-        request: AgentRuntimeWire.RunRequest,
-        result: AgentRuntimeWire.RunResult,
-        events: List<AgentEvent>
-    ) {
-        val handoff = request.handoff ?: return
-        AgentExternalArchivePayload.from(handoff.payload) ?: return
-        AgentRunArchiveStore.add(
-            this,
-            AgentRunArchiveStore.ArchivedRun(
-                handoff = handoff,
-                events = events,
-                result = result,
-                createdAt = System.currentTimeMillis()
-            )
-        )
     }
 
     private fun finishWithFailure(
@@ -834,7 +803,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 recordSupplementEvent(supplementText)
             }
             if (event == null) {
-                if (!session.isTerminal) {
+                if (!session.isFinished) {
                     state.value = state.value.copy(
                         statusText = "任务正在收尾，请在结果出现后继续补充",
                     )

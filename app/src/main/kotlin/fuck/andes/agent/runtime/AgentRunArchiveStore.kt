@@ -2,6 +2,7 @@ package fuck.andes.agent.runtime
 
 import android.content.Context
 import android.os.Bundle
+import androidx.room.withTransaction
 import fuck.andes.agent.model.AgentConversationCodec
 import fuck.andes.agent.model.AgentModelClient
 import fuck.andes.data.db.FuckAndesDatabase
@@ -37,21 +38,27 @@ internal object AgentRunArchiveStore {
     fun add(context: Context, run: ArchivedRun) {
         val appContext = context.applicationContext
         runBlocking(Dispatchers.IO) {
-            val dao = FuckAndesDatabase.get(appContext).runtimeRunDao()
-            val compacted = run.copy(events = compactEvents(run.events))
-            val archiveRunId = compacted.archiveRunId
-            dao.replaceArchivedRun(
-                run = compacted.toEntity(archiveRunId),
-                events = compacted.toEventEntities(archiveRunId),
-            )
-            prune(dao)
+            val db = FuckAndesDatabase.get(appContext)
+            db.withTransaction { commitInTransaction(db.runtimeRunDao(), run) }
         }
+    }
+
+    /** Caller must own the Room transaction shared with the result outbox. */
+    suspend fun commitInTransaction(dao: RuntimeRunDao, run: ArchivedRun) {
+        val compacted = run.copy(events = compactEvents(run.events))
+        val archiveRunId = compacted.archiveRunId
+        dao.replaceArchivedRun(
+            run = compacted.toEntity(archiveRunId),
+            events = compacted.toEventEntities(archiveRunId),
+        )
+        prune(dao)
     }
 
     fun list(context: Context): List<ArchivedRun> {
         val appContext = context.applicationContext
         return runBlocking(Dispatchers.IO) {
-            prune(FuckAndesDatabase.get(appContext).runtimeRunDao())
+            val db = FuckAndesDatabase.get(appContext)
+            db.withTransaction { prune(db.runtimeRunDao()) }
                 .mapNotNull { it.toDomain() }
         }
     }

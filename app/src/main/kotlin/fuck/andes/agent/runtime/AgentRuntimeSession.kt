@@ -18,6 +18,7 @@ internal class AgentRuntimeSession(
     private enum class State {
         RUNNING,
         COMMITTING,
+        PERSIST_FAILED,
         TERMINAL,
     }
 
@@ -26,6 +27,14 @@ internal class AgentRuntimeSession(
 
     val isTerminal: Boolean
         get() = lock.withLock { state == State.TERMINAL }
+
+    val isFinished: Boolean
+        get() = lock.withLock { state == State.TERMINAL || state == State.PERSIST_FAILED }
+
+    class TerminalCommitException(
+        val failureResult: AgentRuntimeWire.RunResult,
+        cause: Throwable,
+    ) : IllegalStateException("Runtime terminal persistence failed", cause)
 
     fun emit(event: AgentEvent): Boolean =
         lock.withLock {
@@ -52,7 +61,7 @@ internal class AgentRuntimeSession(
     /**
      * 先原子竞争 COMMITTING，再完成提交前副作用和结果发布。取消与替换不能越过提交胜者，
      * 因而不会出现“客户端收到取消、outbox 却留下成功结果”的分裂状态；耗时 I/O 也不持有锁。
-     * [beforePublish] 必须自行吸收非致命持久化异常。
+     * [beforePublish] 必须在持久化失败时抛出异常，不得发布原始运行结果。
      */
     fun complete(
         result: AgentRuntimeWire.RunResult,
@@ -63,12 +72,25 @@ internal class AgentRuntimeSession(
             require(result.runId == runId) { "Result runId does not match the active session" }
             state = State.COMMITTING
         }
-        val commitFailure = runCatching(beforePublish).exceptionOrNull()
+        try {
+            beforePublish()
+        } catch (cause: Exception) {
+            val failure = AgentRuntimeWire.RunResult(
+                runId = runId,
+                ok = false,
+                content = "",
+                error = "运行结果未能持久化，未确认完成",
+            )
+            lock.withLock {
+                state = State.PERSIST_FAILED
+                resultSink(failure)
+            }
+            throw TerminalCommitException(failure, cause)
+        }
         lock.withLock {
             state = State.TERMINAL
             resultSink(result)
         }
-        commitFailure?.let { throw it }
         return true
     }
 

@@ -3,8 +3,11 @@ package fuck.andes.agent.runtime
 import fuck.andes.data.db.FuckAndesDatabase
 import android.content.Context
 import fuck.andes.agent.model.AgentModelClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -71,6 +74,42 @@ class AgentRuntimeResultStoreTest {
 
         assertFalse(AgentRuntimeResultStore.add(context, completedRun))
         assertTrue(AgentRuntimeResultStore.list(context).none { it.result.runId == runId })
+    }
+
+    @Test
+    fun archiveFailureRollsBackCompletedResult() {
+        val runId = "archive-failure-${System.nanoTime()}"
+        val handoff = AgentRuntimeWire.EntryHandoff(id = runId, source = "breeno", payload = "{}")
+        val result = AgentRuntimeWire.RunResult(runId = runId, ok = true, content = "completed")
+        val createdAt = System.currentTimeMillis()
+        val completed = AgentRuntimeWire.CompletedRun(handoff, result, createdAt)
+        val archived = AgentRunArchiveStore.ArchivedRun(handoff, emptyList(), result, createdAt)
+
+        runBlocking(Dispatchers.IO) {
+            FuckAndesDatabase.get(context).openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER fail_archive_insert BEFORE INSERT ON runtime_archive_runs " +
+                    "BEGIN SELECT RAISE(ABORT, 'archive failpoint'); END"
+            )
+        }
+
+        val failure = assertThrows(Exception::class.java) {
+            AgentRuntimeResultStore.add(context, completed, archive = archived)
+        }
+        assertTrue(generateSequence<Throwable>(failure) { it.cause }.any {
+            it.message?.contains("archive failpoint") == true
+        })
+        assertTrue(AgentRuntimeResultStore.list(context).none { it.result.runId == runId })
+        assertTrue(AgentRunArchiveStore.list(context).none { it.result.runId == runId })
+
+        runBlocking(Dispatchers.IO) {
+            FuckAndesDatabase.get(context).openHelper.writableDatabase.execSQL(
+                "DROP TRIGGER fail_archive_insert"
+            )
+        }
+        assertTrue(AgentRuntimeResultStore.add(context, completed, archive = archived))
+        FuckAndesDatabase.closeForTests()
+        assertEquals(result.content, AgentRuntimeResultStore.list(context).single { it.result.runId == runId }.result.content)
+        assertEquals(result.content, AgentRunArchiveStore.list(context).single { it.result.runId == runId }.result.content)
     }
 
     @Test
