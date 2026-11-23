@@ -142,24 +142,28 @@ class AgentRuntimeSessionTest {
     }
 
     @Test
-    fun commitCallbackFailureCannotLeaveSessionWithoutTerminalResult() {
+    fun commitCallbackFailureNeverPublishesUncommittedSuccess() {
         val results = mutableListOf<AgentRuntimeWire.RunResult>()
         val session = AgentRuntimeSession(runId = "run-1", resultSink = results::add)
 
-        assertThrows(IllegalStateException::class.java) {
+        val failure = assertThrows(AgentRuntimeSession.TerminalCommitException::class.java) {
             session.complete(
                 result = AgentRuntimeWire.RunResult(
                     runId = "run-1",
-                    ok = false,
-                    content = "",
-                    error = "persistence failed",
+                    ok = true,
+                    content = "must not publish",
                 ),
                 beforePublish = { error("disk full") },
             )
         }
 
-        assertTrue(session.isTerminal)
-        assertEquals(1, results.size)
+        assertFalse(session.isTerminal)
+        assertTrue(session.isFinished)
+        assertEquals(listOf(failure.failureResult), results)
+        assertFalse(results.single().ok)
+        assertTrue(results.single().content.isEmpty())
         assertFalse(session.cancel("late"))
+        assertFalse(session.steer("late"))
+        assertFalse(session.emit(AgentEvent.RoundStarted(round = 2, messageCount = 2)))
     }
 }

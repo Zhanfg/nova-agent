@@ -229,13 +229,16 @@ internal class AgentRuntimeRunExecutor(
                 )
                 request
             }
-        val committed = session.complete(result) {
-            runCatching { persistArtifacts(completedRequest, result, archivedEvents) }
-                .onFailure { throwable ->
-                    AndroidAgentLogger.error(
-                        "Agent runtime artifact persistence failed: type=${throwable.safeLogType()}"
-                    )
-                }
+        val committed = try {
+            session.complete(result) { persistArtifacts(completedRequest, result, archivedEvents) }
+        } catch (failure: AgentRuntimeSession.TerminalCommitException) {
+            val causeType = requireNotNull(failure.cause).safeLogType()
+            AndroidAgentLogger.error("Agent runtime artifact persistence failed: type=$causeType")
+            return Outcome(
+                result = failure.failureResult,
+                entrySurfaceGuard = entrySurfaceGuard,
+                shouldUpdateHost = true,
+            )
         }
         return Outcome(
             result = result,
